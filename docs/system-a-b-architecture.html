@@ -189,6 +189,9 @@
   <a href="#a-dashboard">Agent A dashboard</a>
   <a href="#b-subagents">Agent B sub-agents</a>
   <a href="#workflows">workflows table</a>
+  <a href="#http-fallback">HTTP fallback APIs</a>
+  <a href="#timing">timing + clocks</a>
+  <a href="#memory">memory + storage budget</a>
   <a href="#roadmap">roadmap</a>
   <a href="#open">open items</a>
 </nav>
@@ -261,7 +264,9 @@
       <tr><td>DECIDE-8</td><td>Frida output format</td><td>Hook emits pure NDJSON via <code>send()</code>. Publisher pipes ndjson directly into FridaTracePayload.</td></tr>
       <tr><td>DECIDE-9</td><td>Logcat evidence kind</td><td>NEW dynamic kind: <code>logcat_capture</code> (don't overload process_spawn)</td></tr>
       <tr><td>DECIDE-10</td><td>install_source enum</td><td><code>pre_existing | staged_apk | xapk_bundle | unknown</code></td></tr>
-      <tr><td>DECIDE-11</td><td>Transport A↔B↔darkseed</td><td>Device-cable + local FS IO is canonical; HTTP API between machines is opt-in fallback. PoC uses device only.</td></tr>
+      <tr><td>DECIDE-11</td><td>Transport A↔B↔darkseed</td><td><strong>REVISED:</strong> Device-cable is canonical; HTTP API on each side is a <strong>first-class second pipeline</strong> (not a deferred v2 item). Renderer tries local FS → falls back to Kali HTTP → placeholder. See §16.</td></tr>
+      <tr><td>TIMING</td><td>Clocks, timestamps, causality</td><td>NTP on Mac + Kali; Pixel drift captured into <code>device_clock_offset_ms</code>. ISO-8601 + epoch_ms + Lamport seq on every JSON write. State sentinels carry sha256 of their payload. See §17.</td></tr>
+      <tr><td>BUDGET</td><td>Memory + storage</td><td>Avg ~75 MB / job across all four locations; worst ~700 MB. Hard cap 500 MB per job on device. Compression per evidence kind, content-addressed blob dedup, scheduled cleanup. See §18.</td></tr>
       <tr><td>DECIDE-13</td><td>Static-self-sufficient flag</td><td>BOTH stored: <code>static_self_sufficient_a</code> (A's confidence) + <code>static_self_sufficient_b</code> (B's review of A's output). Joint report shows both.</td></tr>
       <tr><td>DECIDE-A2</td><td>Push-notification-to-WebView exclusion</td><td>Ship as proposed: <code>tap-required: true</code> flag in rubric; universal hook captures <code>Intent.setData</code>; URL fires w/o preceding setData → scored.</td></tr>
       <tr><td>DECIDE-A3</td><td>Ad-SDK list canonical source</td><td><code>darkseed/data/kb-seed/benign.json</code> with <code>category: "sdk"</code>. Single source of truth, both agents pull fresh.</td></tr>
@@ -1207,8 +1212,332 @@ SELECT * FROM workflows
 </section>
 
 <!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="http-fallback">
+  <h2><span class="num">§16</span> HTTP fallback APIs — the second data pipeline</h2>
+  <p class="lead">
+    The device cable is the canonical evidence transport. But each side also runs a local HTTP API so the operator's UI and the agents can fetch evidence directly when the device path is slow, broken, or doesn't carry the full payload. <strong>Both paths are first-class.</strong> The renderer tries local FS first, falls back to HTTP, finally degrades to a placeholder.
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrHA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#34d399"/></marker>
+      <marker id="arrHB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#60a5fa"/></marker>
+      <marker id="arrHD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+    </defs>
+
+    <text class="lane" x="40" y="34">renderer (Agent A's Proofs tab)</text>
+
+    <rect class="box-bg a" x="40" y="60" width="320" height="100" rx="10"/>
+    <text class="title" x="60" y="86">render &lt;EvidenceCard&gt;</text>
+    <text class="sub" x="60" y="104">on mount → fetchEvidence(item)</text>
+    <text class="sub" x="60" y="120">on error / 404 → fallback path</text>
+    <text class="sub" x="60" y="136">on no source → placeholder skeleton</text>
+
+    <path d="M 360 110 L 440 110" stroke="#34d399" stroke-width="1.4" fill="none" marker-end="url(#arrHA)"/>
+    <text class="sub" x="370" y="100" fill="#34d399">① try</text>
+
+    <rect class="box-bg" x="440" y="60" width="240" height="100" rx="10"/>
+    <text class="title" x="460" y="86">local FS (always tried first)</text>
+    <text class="sub" x="460" y="104">~/pentest-lab/jobs/&lt;job&gt;/...</text>
+    <text class="sub" x="460" y="120">populated by Mac ADB pull</text>
+    <text class="sub" x="460" y="136">cheap, instant, fully cached</text>
+
+    <path d="M 680 110 L 760 110" stroke="#60a5fa" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrHB)"/>
+    <text class="sub" x="690" y="100" fill="#60a5fa">② fallback if 404 / partial</text>
+
+    <rect class="box-bg b" x="760" y="60" width="280" height="100" rx="10"/>
+    <text class="title" x="780" y="86">HTTP API on Kali (darkseed:3001)</text>
+    <text class="sub" x="780" y="104">GET /api/jobs/&lt;job&gt;/&lt;kind&gt;/&lt;ref&gt;</text>
+    <text class="sub" x="780" y="120">streams blobs by sha256</text>
+    <text class="sub" x="780" y="136">bearer-token authed</text>
+
+    <path d="M 1040 110 L 1120 110" stroke="#f59e0b" stroke-width="1.4" stroke-dasharray="4 3" fill="none" marker-end="url(#arrHD)"/>
+    <text class="sub" x="1045" y="100" fill="#f59e0b">③ final</text>
+
+    <rect class="box-bg dev" x="1120" y="60" width="140" height="100" rx="10"/>
+    <text class="title" x="1140" y="86">placeholder</text>
+    <text class="sub" x="1140" y="104">"evidence not yet</text>
+    <text class="sub" x="1140" y="120">  available"</text>
+    <text class="sub" x="1140" y="136">retry button</text>
+
+    <!-- Lower lane: API surfaces on each side -->
+    <text class="lane" x="40" y="210">Mac API (read-only mirror of local FS)</text>
+    <rect class="box-bg a" x="40" y="240" width="600" height="200" rx="10"/>
+    <text class="title" x="60" y="266">localhost:5180/api (on Mac)</text>
+    <text class="sub" x="60" y="282">GET /jobs                                       — list of in-flight + recent jobs</text>
+    <text class="sub" x="60" y="298">GET /jobs/&lt;job_id&gt;                              — full report state + lifecycle</text>
+    <text class="sub" x="60" y="314">GET /jobs/&lt;job_id&gt;/scoring                      — score card JSON</text>
+    <text class="sub" x="60" y="330">GET /jobs/&lt;job_id&gt;/playbook                     — execution_playbook.json</text>
+    <text class="sub" x="60" y="346">GET /jobs/&lt;job_id&gt;/manifest                     — manifest_summary.json</text>
+    <text class="sub" x="60" y="362">GET /jobs/&lt;job_id&gt;/rubrics                      — list of rubric MD files</text>
+    <text class="sub" x="60" y="378">GET /jobs/&lt;job_id&gt;/rubrics/&lt;RID&gt;                — one rubric MD raw</text>
+    <text class="sub" x="60" y="394">GET /jobs/&lt;job_id&gt;/decompiled.tar.gz            — stream tarball</text>
+    <text class="sub" x="60" y="410">GET /jobs/&lt;job_id&gt;/joint_report.md              — assembled report</text>
+    <text class="sub" x="60" y="426">POST /jobs/&lt;job_id&gt;/verdict                     — operator sets verdict</text>
+
+    <text class="lane" x="660" y="210">Kali / darkseed API (full corpus + B's evidence)</text>
+    <rect class="box-bg b" x="660" y="240" width="600" height="200" rx="10"/>
+    <text class="title" x="680" y="266">kali:3001/api (darkseed + B mirrors)</text>
+    <text class="sub" x="680" y="282">GET /jobs/&lt;job_id&gt;/dynamic_results              — dynamic_results.json</text>
+    <text class="sub" x="680" y="298">GET /jobs/&lt;job_id&gt;/frida/&lt;vpn&gt;.ndjson           — stream ndjson</text>
+    <text class="sub" x="680" y="314">GET /jobs/&lt;job_id&gt;/frida/&lt;vpn&gt;.ndjson?since=&lt;t&gt; — incremental tail</text>
+    <text class="sub" x="680" y="330">GET /jobs/&lt;job_id&gt;/logcat/&lt;vpn&gt;.txt             — stream logcat</text>
+    <text class="sub" x="680" y="346">GET /jobs/&lt;job_id&gt;/har/&lt;vpn&gt;.har                — HAR blob</text>
+    <text class="sub" x="680" y="362">GET /jobs/&lt;job_id&gt;/screenshots/&lt;file&gt;.png       — screenshot blob</text>
+    <text class="sub" x="680" y="378">GET /api/blobs/&lt;sha256&gt;                         — generic content-addressed blob</text>
+    <text class="sub" x="680" y="394">GET /api/chains/&lt;chain_id&gt;                      — full chain</text>
+    <text class="sub" x="680" y="410">POST /api/chains/&lt;chain_id&gt;/verdict             — verdict mirror endpoint</text>
+    <text class="sub" x="680" y="426">GET /api/kb/lookup?type=&lt;t&gt;&value=&lt;v&gt;           — KB hit probe</text>
+  </svg>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Renderer contract (TypeScript sketch)</h4>
+<pre style="margin: 0; font-size: 11px;">// dashboard/src/lib/evidenceSource.ts
+async function fetchEvidence&lt;T&gt;(ref: EvidenceRef): Promise&lt;EvidenceResult&lt;T&gt;&gt; {
+  // ① local FS via the Mac API
+  try {
+    const r = await fetch(localApi(ref), { signal: AbortSignal.timeout(2000) });
+    if (r.ok) return { source: "local", data: await parse&lt;T&gt;(r) };
+  } catch { /* ignore */ }
+
+  // ② HTTP fallback to darkseed (Kali)
+  try {
+    const r = await fetch(kaliApi(ref), {
+      signal: AbortSignal.timeout(8000),
+      headers: { authorization: `Bearer ${darkseedToken()}` },
+    });
+    if (r.ok) return { source: "kali", data: await parse&lt;T&gt;(r), staleness: r.headers.get("x-evidence-age") };
+  } catch { /* ignore */ }
+
+  // ③ placeholder
+  return { source: "missing", placeholder: missingReason(ref) };
+}
+
+// Components show a small badge per source:
+//   "local"  → green dot
+//   "kali"   → blue dot + staleness if &gt; 1 min
+//   "missing"→ amber dot + retry button</pre>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Why dual-path beats single-path</h4>
+      <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li><strong>Cable un-mounted</strong>: device may be physically with the other operator; HTTP still serves what was already pulled / archived.</li>
+        <li><strong>Live tail</strong>: <code>?since=&lt;ts&gt;</code> on frida ndjson lets A's Proofs tab stream Agent B's run as it happens, not after.</li>
+        <li><strong>Big blobs (decompiled tar, HAR)</strong>: device path may fail mid-pull. HTTP supports resumable range requests.</li>
+        <li><strong>Re-rendering old chains</strong>: device is long-gone; darkseed has everything content-addressed by sha — A can re-render last week's investigation by hitting <code>kali:3001/api/chains/&lt;id&gt;</code>.</li>
+        <li><strong>Researcher off-site</strong>: same Mac on a different network, no cable — can still browse the corpus over VPN.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="panel compact" style="margin-top: 14px;">
+    <h4 style="margin: 0 0 6px;">Backwards compat with the PoC cable-only flow</h4>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      The HTTP fallback is <strong>additive</strong>. The full lifecycle still works with the cable only. If A can never reach Kali, every evidence card renders from local FS or shows placeholder — nothing breaks. Operators can disable the fallback per-deployment via <code>~/.darkseed/config.json: { httpFallback: false }</code>. When enabled, network failures are silent — no error toasts, just the source-badge changes color.
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="timing">
+  <h2><span class="num">§17</span> Timing, clocks, and synchronization</h2>
+  <p class="lead">
+    Three hosts (Mac, Kali, Pixel) write timestamps. Cable moves break event ordering. State sentinels need to survive crashes mid-transition. Here's the discipline that holds it all together for the PoC.
+  </p>
+
+  <h3>§17.1 Clock discipline</h3>
+  <div class="panel compact">
+    <table class="dt">
+      <thead><tr><th>host</th><th>NTP source</th><th>typical drift</th><th>recovery</th></tr></thead>
+      <tbody>
+        <tr><td>Mac (A)</td><td>system NTP (Apple time.apple.com)</td><td>&lt; 50ms when online</td><td><code>sudo sntp -sS time.apple.com</code></td></tr>
+        <tr><td>Kali (B + darkseed)</td><td><code>chronyd</code> against pool.ntp.org</td><td>&lt; 100ms</td><td><code>sudo chronyc makestep</code> at boot</td></tr>
+        <tr><td>Pixel 7</td><td>built-in Android NTP (carrier or WiFi)</td><td>can drift &gt; 5s if airplane mode + idle</td><td>cannot setprop from frida-server safely; record observed offset instead (see §17.3)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin: 8px 0 0; color: var(--muted); font-size: 12px;">
+      <strong>Boot-time check</strong> in <code>dyn-device-health</code> already runs adb + frida-ps. Extend it to also <code>adb shell date +%s%N</code> and compare to Kali wall clock; if delta &gt; 2s, log a warning and embed the observed offset into the job's <code>execution_playbook.json:job_metadata.device_clock_offset_ms</code>. Every JSON write on the device thereafter is reinterpreted on receipt.
+    </p>
+  </div>
+
+  <h3>§17.2 Timestamp convention everywhere</h3>
+  <div class="panel compact">
+<pre style="margin: 0; font-size: 11px;">// ALL JSON files use:
+{
+  "ts_iso": "2026-05-24T08:42:13.227+00:00",   // ISO-8601 with explicit TZ
+  "ts_epoch_ms": 1779280933227,                  // monotonic-friendly
+  "actor": "agent_a",                            // who wrote this
+  "actor_clock_skew_ms": 12,                     // best-known drift vs reference (Kali)
+  "lamport_seq": 47,                             // per-actor monotonic counter
+  ...
+}
+
+// NEVER:
+{ "completed_at": "2026-05-23 12:45:00" }       // ambiguous TZ, no offset, no causality</pre>
+  </div>
+
+  <h3>§17.3 Causality — Lamport sequences per actor</h3>
+  <div class="panel compact">
+    <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+      Wall-clock can lie, but causality cannot. Each actor maintains a <strong>per-job monotonic counter</strong> (<code>lamport_seq</code>) that increments on every state transition or evidence write. Across actors:
+    </p>
+<pre style="margin: 0; font-size: 11px;">// happens-before relation:
+//   A_complete{actor=A, seq=10} → B_started{actor=B, seq=1, observes_A=10}
+//   B_started{actor=B, seq=1}    → B_complete{actor=B, seq=8}
+//   B_complete{actor=B, seq=8}   → A_ack{actor=A, seq=14, observes_B=8}
+
+// When publisher renders the joint report, it walks the lamport graph
+// to produce a deterministic timeline that doesn't depend on wall-clock alignment.</pre>
+  </div>
+
+  <h3>§17.4 State-sentinel atomicity</h3>
+  <div class="panel compact">
+    <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+      A <code>state.X_complete</code> file alone is not enough — what if the writer crashed mid-flush? Discipline:
+    </p>
+    <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+      <li>Each state sentinel is written with content: <code>{actor, ts_iso, lamport_seq, hash_of_payload}</code> where <code>hash_of_payload</code> is sha256 of the JSON payload it's signalling completion of (e.g. <code>execution_playbook.json</code> for <code>A_complete</code>).</li>
+      <li>Reader on the other side: read the sentinel, verify the hash matches the actual payload file. If mismatch → the writer crashed mid-write; treat as <code>state.X_error</code>.</li>
+      <li>Atomic write pattern: <code>adb shell "echo '{...}' &gt; tmp.X &amp;&amp; mv tmp.X state.X_complete"</code> — never write directly to the final name.</li>
+    </ul>
+  </div>
+
+  <h3>§17.5 Timeouts + cable-move tolerance (concrete values)</h3>
+  <div class="panel compact">
+    <table class="dt">
+      <thead><tr><th>scope</th><th>default</th><th>config key</th><th>action on expiry</th></tr></thead>
+      <tbody>
+        <tr><td>per-step (playbook step)</td><td>60s pull / 30s sanitize / 60s install / 180s spawn</td><td><code>playbook.dynamic_execution_pipeline[].timeout_seconds</code></td><td>step status = <code>failed</code>; <code>on_failure: abort\|continue</code> decides chain fate</td></tr>
+        <tr><td>per-phase</td><td>slicing 5min / hunt 30min / dynamic 30min/VPN / awaiting_pickup 15min</td><td><code>~/.darkseed/config.json.phase_ttl_seconds</code></td><td>state pill turns yellow ("stale"); operator notified</td></tr>
+        <tr><td>global TTL per job</td><td>4 hours wall-clock</td><td><code>playbook.job_metadata.global_ttl_minutes</code> (default 30 in v2, raise to 240 for PoC)</td><td>job auto-moves to <code>errored</code> with reason <code>global_ttl_exceeded</code></td></tr>
+        <tr><td>cable-move grace</td><td>5 minutes between A_complete and B_started</td><td><code>cable_move_grace_seconds</code></td><td>warn at 5min, escalate to "stuck" at 30min</td></tr>
+        <tr><td>heartbeat interval</td><td>30s while active</td><td><code>heartbeat_seconds</code></td><td>last_heartbeat &gt; 90s → actor "stale" badge</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>§17.6 Replay-safety / idempotency</h3>
+  <div class="panel compact">
+    <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+      <li><strong>Re-running Agent B</strong> on the same <code>&lt;job_id&gt;</code> after a crash: <code>dyn-playbook-scout</code> sees existing <code>state.B_started</code> + partial <code>dynamic_results/</code>; resumes from last completed step (per-step idempotency via <code>step_N_done</code> sentinels).</li>
+      <li><strong>Re-ingesting a joint report</strong>: darkseed's report-ingester already idempotent by <code>content_hash</code>. Re-publishing same job is a no-op.</li>
+      <li><strong>Re-running publisher</strong>: keyed by <code>job_id + content_hash</code> of all source files combined. Same inputs → same output report, same blobs (sha-addressed). Cheap to re-run.</li>
+      <li><strong>Verdict mirror retry</strong>: A's dashboard queues failed POSTs locally with a <code>verdict_id</code> uuid. Replay uses the same id, darkseed dedupes via the audit log.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="memory">
+  <h2><span class="num">§18</span> Memory + storage budget per job + compression strategy</h2>
+  <p class="lead">
+    Quantified footprint of one average and one worst-case job, across all four storage locations, with the compression strategy that keeps the device under 500MB per job and total scratch under 2GB.
+  </p>
+
+  <h3>§18.1 Storage footprint per job (gzipped at rest)</h3>
+  <div class="panel">
+    <table class="dt">
+      <thead><tr><th>location</th><th>item</th><th>avg</th><th>worst</th><th>compression strategy</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="9" style="vertical-align: top;"><span class="pill dev">device</span></td><td>APK base + splits</td><td>30 MB</td><td>200 MB</td><td>don't copy — install directly from staging; delete after install</td></tr>
+        <tr><td>decompiled.tar.gz</td><td>7 MB</td><td>30 MB</td><td>tar + gzip-9; brotli for v2 (~30% smaller)</td></tr>
+        <tr><td>rubrics + triggers + decryptors</td><td>50 KB</td><td>500 KB</td><td>plain .md/.js/.py (negligible)</td></tr>
+        <tr><td>manifest_summary.json</td><td>5 KB</td><td>20 KB</td><td>plain JSON</td></tr>
+        <tr><td>screenshots (paired)</td><td>200 KB</td><td>2 MB</td><td>PNG already compressed; downsize to 720p; v2: WebP</td></tr>
+        <tr><td>dynamic_results/ frida ndjson</td><td>1 MB</td><td>20 MB</td><td>NDJSON streamed via send(); <strong>gzipped on the fly</strong> if &gt; 5 MB</td></tr>
+        <tr><td>logcat per VPN</td><td>100 KB</td><td>5 MB</td><td>filtered to specific tags (frida, app pkg) before staging</td></tr>
+        <tr><td>HAR per VPN (opt)</td><td>500 KB</td><td>50 MB</td><td>brotli-compressed inline; opt-in (HTTP Toolkit may be off)</td></tr>
+        <tr><td>state sentinels</td><td>1 KB</td><td>2 KB</td><td>none needed (signed JSON, &lt; 200 bytes each)</td></tr>
+
+        <tr style="border-top: 2px solid var(--border-strong);"><td colspan="2"><strong>device total per job</strong></td><td><strong>~9 MB</strong> (excl. APK)</td><td><strong>~110 MB</strong> (excl. APK)</td><td>hard cap 500 MB → reject job</td></tr>
+
+        <tr><td rowspan="4" style="vertical-align: top;"><span class="pill a">Mac scratch</span></td><td>pulled assets mirror</td><td>~10 MB</td><td>~110 MB</td><td>auto-clean on <code>state.A_ack</code>; weekly cron purges &gt; 30 days</td></tr>
+        <tr><td>jadx_out (re-decompile cache)</td><td>~40 MB</td><td>~300 MB</td><td>LRU cache, 5GB ceiling</td></tr>
+        <tr><td>local report .md</td><td>50 KB</td><td>500 KB</td><td>plain MD, never purged</td></tr>
+        <tr><td>verdict-queue (pending POSTs)</td><td>1 KB</td><td>100 KB</td><td>JSON-lines append-only</td></tr>
+
+        <tr style="border-top: 2px solid var(--border-strong);"><td rowspan="5" style="vertical-align: top;"><span class="pill b">Kali scratch</span></td><td>pulled handoff mirror</td><td>~10 MB</td><td>~110 MB</td><td>auto-clean after publish</td></tr>
+        <tr><td>frida ndjson (uncompressed working copy)</td><td>3 MB</td><td>60 MB</td><td>processed in memory then re-compressed for archive</td></tr>
+        <tr><td>darkseed SQLite (DB only)</td><td>50 KB per chain</td><td>500 KB per chain</td><td>WAL + nightly <code>VACUUM</code></td></tr>
+        <tr><td>darkseed blobs (content-addressed)</td><td>dedupes!</td><td>bounded by unique sha256</td><td>same APK → 1 blob; cross-chain reuse common</td></tr>
+        <tr><td>chains/index FTS5</td><td>~20% of chain JSON</td><td>—</td><td>rebuilt by reindex; small</td></tr>
+
+        <tr style="border-top: 2px solid var(--border-strong);"><td colspan="2"><strong>total avg / worst per job (all 4 locations)</strong></td><td><strong>~75 MB</strong></td><td><strong>~700 MB</strong></td><td>worst case dominated by APK + decompiled + HAR; can clip HAR</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>§18.2 Memory budget (live during ONE job)</h3>
+  <div class="panel compact">
+    <table class="dt">
+      <thead><tr><th>process</th><th>steady</th><th>peak</th><th>notes</th></tr></thead>
+      <tbody>
+        <tr><td>Agent A (Claude session on Mac)</td><td>200 MB</td><td>400 MB</td><td>main context + tool history</td></tr>
+        <tr><td>JADX subprocess on Mac</td><td>—</td><td>1.5 GB</td><td>peak during decompile; tear-down after sliced</td></tr>
+        <tr><td>Ghidra headless on Mac</td><td>—</td><td>2.5 GB</td><td>JVM heap; semaphore-1 (single instance)</td></tr>
+        <tr><td>Agent B (Claude on Windows + SSH)</td><td>150 MB</td><td>250 MB</td><td>orchestrator only</td></tr>
+        <tr><td>Frida session on Kali</td><td>50 MB</td><td>120 MB</td><td>per spawn; 3 spawns (VPN exits) = 360 MB peak</td></tr>
+        <tr><td>HTTP Toolkit (opt)</td><td>200 MB</td><td>500 MB</td><td>only if MITM enabled</td></tr>
+        <tr><td>darkseed API (Hono + better-sqlite3)</td><td>50 MB</td><td>200 MB</td><td>SQLite mmap up to 1GB</td></tr>
+        <tr><td>darkseed dashboard (Vite dev)</td><td>120 MB</td><td>—</td><td>only during operator use</td></tr>
+        <tr><td>Pixel (target app + frida-server)</td><td>300 MB</td><td>600 MB</td><td>varies by target; rooted device has 6-8GB RAM</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>§18.3 Compression decisions per evidence kind</h3>
+  <div class="panel compact">
+    <table class="dt">
+      <thead><tr><th>kind</th><th>raw bytes/event</th><th>format</th><th>compression</th><th>knowledge density</th></tr></thead>
+      <tbody>
+        <tr><td><code>frida_trace</code></td><td>~200 B/event</td><td>NDJSON (one event per line)</td><td>gzip-9 when &gt; 5 MB; streaming append-friendly</td><td>★★★★★ (structured, replayable, machine-parseable)</td></tr>
+        <tr><td><code>har_capture</code></td><td>~5 KB/request</td><td>HAR 1.2 JSON</td><td>brotli (10× smaller than raw HAR)</td><td>★★★★★ (full req/resp; preferred when HTTP Toolkit on)</td></tr>
+        <tr><td><code>pcap_capture</code></td><td>variable</td><td>libpcap binary</td><td>raw (already compact); plus inline parsed flow summary</td><td>★★★★ (lossless network truth; needs tshark to read)</td></tr>
+        <tr><td><code>logcat_capture</code></td><td>~150 B/line</td><td>plain text, tag-filtered</td><td>gzip when &gt; 1 MB</td><td>★★★ (signal-to-noise low without filtering)</td></tr>
+        <tr><td><code>source_artifact</code></td><td>~80 KB/class</td><td>tar of .java + .smali + .so structs</td><td>tar+gzip-9 (typical 3-5× ratio)</td><td>★★★★★ (full ground truth for re-analysis)</td></tr>
+        <tr><td><code>ui_capture</code></td><td>~500 KB/png</td><td>PNG → downsized to 720p</td><td>PNG → WebP in v2 (~50% smaller)</td><td>★★★ (visual proof; pair cloaked/uncloaked = 2 frames)</td></tr>
+        <tr><td><code>trigger_mock</code></td><td>~2 KB</td><td>JSON</td><td>none (tiny)</td><td>★★★★ (reusable across runs via workflows table)</td></tr>
+        <tr><td><code>decryptor_artifact</code></td><td>~5 KB</td><td>Python source</td><td>none (tiny)</td><td>★★★★★ (executable; runs deterministically; promotes to workflow)</td></tr>
+        <tr><td><code>verification_result</code></td><td>~1 KB</td><td>JSON</td><td>none</td><td>★★★★★ (the actual signal — driver of verified_score)</td></tr>
+        <tr><td><code>kb_match</code></td><td>~500 B</td><td>JSON</td><td>none</td><td>★★★★ (per-IOC overlay; cheap, high-signal)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>§18.4 Cleanup policy (the storage doesn't grow without bound)</h3>
+  <div class="panel compact">
+    <table class="dt">
+      <thead><tr><th>location</th><th>trigger</th><th>action</th></tr></thead>
+      <tbody>
+        <tr><td>device handoff dir</td><td>operator sets verdict + chain ingested in darkseed</td><td>Agent A writes <code>state.A_ack</code> → Agent B on next reconnect wipes <code>/data/local/tmp/riskware_handoff/&lt;job_id&gt;/</code></td></tr>
+        <tr><td>device handoff dir (orphans)</td><td>weekly cron in <code>dyn-device-health</code></td><td>delete jobs with <code>state.A_ack</code> &gt; 7 days, or jobs &gt; 30 days regardless</td></tr>
+        <tr><td>Mac scratch <code>~/pentest-lab/jobs/</code></td><td><code>state.A_ack</code> + weekly cron</td><td>archive joint_report.md + verdict JSON; purge tarball/jadx_out</td></tr>
+        <tr><td>Kali scratch <code>~/pentest-lab/jobs/</code></td><td>publish complete</td><td>purge frida ndjson working copies; keep .gz archives 30d</td></tr>
+        <tr><td>darkseed SQLite</td><td>nightly</td><td><code>PRAGMA wal_checkpoint(TRUNCATE); VACUUM;</code></td></tr>
+        <tr><td>darkseed blobs</td><td>orphan sweep (any blob with ref_count=0 &gt; 30d)</td><td>delete blob file + row</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>§18.5 Hard limits (reject the job if exceeded)</h3>
+  <div class="panel compact">
+    <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+      <li>Device free space &lt; 1 GB at job start → reject with "device storage full"</li>
+      <li>Single job device dir &gt; 500 MB → publish what's there, mark <code>partial: true</code> in joint report</li>
+      <li>Mac scratch &gt; 5 GB → block new Slice operations until cleanup runs</li>
+      <li>Kali scratch &gt; 10 GB → same</li>
+      <li>darkseed SQLite &gt; 2 GB → run <code>VACUUM</code> immediately; warn at 10 GB</li>
+      <li>Concurrent jobs on device: <strong>1</strong> for PoC (single-job-at-a-time enforced by lock on <code>/data/local/tmp/riskware_handoff/.lock</code>)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
 <section id="roadmap">
-  <h2><span class="num">§16</span> Roadmap — build order</h2>
+  <h2><span class="num">§19</span> Roadmap — build order</h2>
   <p class="lead">Sized to ship the PoC in two-week sprints, then iterate. The PoC stops at "labels.jsonl flowing" — agent priors deferred to v2.</p>
 
   <div class="grid-3">
@@ -1274,7 +1603,7 @@ SELECT * FROM workflows
 
 <!-- ───────────────────────────────────────────────────────────────────────── -->
 <section id="open">
-  <h2><span class="num">§17</span> Open items / planning slots</h2>
+  <h2><span class="num">§20</span> Open items / planning slots</h2>
   <p class="lead">Decisions that didn't gate the design but still need answers before we ship past PoC.</p>
   <div class="grid-2">
     <div class="slot">
