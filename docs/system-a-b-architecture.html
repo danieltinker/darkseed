@@ -193,6 +193,8 @@
   <a href="#timing">timing + clocks</a>
   <a href="#memory">memory + storage budget</a>
   <a href="#roadmap">roadmap</a>
+  <a href="#verdict-engine">verdict engine</a>
+  <a href="#alice">alice UI</a>
   <a href="#open">open items</a>
 </nav>
 
@@ -1602,8 +1604,68 @@ async function fetchEvidence&lt;T&gt;(ref: EvidenceRef): Promise&lt;EvidenceResu
 </section>
 
 <!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="verdict-engine">
+  <h2><span class="num">§20</span> Verdict / Discrimination Engine</h2>
+  <p class="lead">
+    The higher-layer knowledge system that prevents false positives like flagging <code>play.googleapis.com</code> as malicious. Layered, deterministic, auditable classifier on B's side. Emits per-IOC confidence + polarity_contribution; aggregates to per-chain <code>agent_initial_verdict</code> + <code>agent_confidence</code>. <strong>See <code>docs/agent-a-response-v2.md §3</code> for full spec.</strong>
+  </p>
+  <div class="panel">
+    <table class="dt">
+      <thead><tr><th>#</th><th>layer</th><th>signal</th><th>output</th></tr></thead>
+      <tbody>
+        <tr><td>L1</td><td>Hard noise filter</td><td>frida.re / schemas.* / xmlns metadata</td><td>DROP (confidence 0)</td></tr>
+        <tr><td>L2</td><td>KB malicious hit</td><td>value in <code>indicators</code> polarity=malicious</td><td>+0.9 × confidence</td></tr>
+        <tr><td>L3</td><td>KB benign hit</td><td>polarity=benign (e.g., play.googleapis.com)</td><td>-0.7 × confidence</td></tr>
+        <tr><td>L4</td><td>Rubric expected_indicators match</td><td>value listed in any rubric YAML</td><td>+0.6 polarity</td></tr>
+        <tr><td>L5</td><td>Cross-VPN coherence</td><td>geo-gated vs universal vs partial</td><td>+0.6 if geo-gated; -0.2 if universal ad traffic</td></tr>
+        <tr><td>L6</td><td>Sink class context</td><td>called from ad-SDK class vs primary-app class</td><td>±0.5</td></tr>
+        <tr><td>L7</td><td>Phase coherence (chain-level)</td><td>K-of-K phases observed</td><td>+0.4 full chain; -0.3 no phases</td></tr>
+        <tr><td>L8</td><td>Cross-corpus similarity</td><td>TF-IDF nearest known-{mal,benign}</td><td>±0.2 × cos_sim</td></tr>
+        <tr><td>L9</td><td>Notification-tap exclusion</td><td>DECIDE-A2; URL fired post-tap context</td><td>-0.5 (benign-by-policy)</td></tr>
+        <tr><td>L10</td><td>App context skepticism</td><td>package signed by Google/OEM cert</td><td>multiplier 0.3 on positive polarities</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel compact" style="margin-top: 12px;">
+    <h4 style="margin: 0 0 6px;">Worked example: <code>play.googleapis.com</code></h4>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      L1 skip → L3 fires (kb_benign: -0.7) → L5 fires (universal_ad: -0.2) → L6 fires (ad-SDK callsite: -0.3). Aggregated polarity = <strong>-1.0</strong>. Surfaces under "Notable benign-classified observations" with reasoning trail. <em>Does NOT contribute to chain's malicious score.</em>
+    </p>
+  </div>
+  <div class="panel compact" style="margin-top: 8px;">
+    <h4 style="margin: 0 0 6px;">Counter-example: <code>play.google.com/store/apps/details?id=com.suspect.app</code></h4>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      Same domain, different context. L3 (-0.7) → L4 fires (rubric M8 expected: +0.6) → L5 (geo-gated brazil only: +0.6) → L6 (primary-app callsite: +0.5). Polarity = <strong>+1.0</strong>. <em>Strong malicious signal despite benign-KB hit on the domain.</em>
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="alice">
+  <h2><span class="num">§21</span> Alice — the evidence store UI</h2>
+  <p class="lead">
+    Per-app interactive evidence view inside darkseed's dashboard. Same source data as the joint MD report; richer presentation. Toggle <code>[MD] [Alice]</code> in the Proofs tab. <strong>Sprint 5 deliverable.</strong> MD mode is the durable archive format; Alice is the UX that makes evidence faster to navigate during review.
+  </p>
+  <div class="panel">
+    <table class="dt">
+      <thead><tr><th>component</th><th>source data</th><th>new code?</th></tr></thead>
+      <tbody>
+        <tr><td>Header banner (verdict + score badges)</td><td><code>chains.*</code> + <code>apps.*</code></td><td>extends existing</td></tr>
+        <tr><td><strong>Reasoning panel</strong> (Alice's defining feature)</td><td><code>verdict_engine.layers_fired_summary</code></td><td><span class="pill new">NEW</span></td></tr>
+        <tr><td>Timeline pane (chronological events)</td><td><code>evidence</code> ordered by <code>ts_epoch_ms</code></td><td><span class="pill new">NEW</span></td></tr>
+        <tr><td>Evidence grid (cards w/ confidence)</td><td><code>evidence</code> grouped by category</td><td>extends EvidenceCardFull</td></tr>
+        <tr><td>IOC network graph (D3 force-directed)</td><td><code>iocs</code> + co-occurrence edges</td><td><span class="pill new">NEW</span></td></tr>
+        <tr><td>KB hits sidebar</td><td><code>evidence.kind='kb_match'</code></td><td>existing (PromoteButton)</td></tr>
+        <tr><td>Similar past chains (TF-IDF)</td><td><code>GET /api/similar/...</code></td><td>existing</td></tr>
+        <tr><td>Verdict bar</td><td><code>chains.verdict_*</code></td><td>existing (VerdictWidget)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
 <section id="open">
-  <h2><span class="num">§20</span> Open items / planning slots</h2>
+  <h2><span class="num">§22</span> Open items / planning slots</h2>
   <p class="lead">Decisions that didn't gate the design but still need answers before we ship past PoC.</p>
   <div class="grid-2">
     <div class="slot">
