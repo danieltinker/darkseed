@@ -1,0 +1,21 @@
+{
+  "name": "darkseed",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "generate": "pnpm --filter @darkseed/generator run generate",
+    "migrate": "pnpm --filter @darkseed/api run migrate && curl -s -X POST http://localhost:3001/api/admin/reindex-corpus || true",
+    "kb:seed": "pnpm --filter @darkseed/api exec tsx src/seed-kb.ts",
+    "api:dev": "pnpm --filter @darkseed/api run dev",
+    "dashboard:dev": "pnpm --filter @darkseed/dashboard run dev",
+    "dev": "node scripts/dev-all.mjs",
+    "build": "pnpm --filter @darkseed/dashboard run build"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ]
+  }
+}

@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>darkseed — system architecture</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --panel: #18181b;
+    --panel-2: #0f0f10;
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --text: #e4e4e7;
+    --muted: #a1a1aa;
+    --dim: #71717a;
+    --faint: #52525b;
+    --accent: #f59e0b;
+    --accent-2: #fbbf24;
+    --rw: #f59e0b;
+    --tf: #a855f7;
+    --ph: #ef4444;
+    --ok: #22c55e;
+    --warn: #f97316;
+    --bad: #dc2626;
+    --static: #34d399;
+    --dynamic: #60a5fa;
+    --agent: #fbbf24;
+    --user: #34d399;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 14px/1.5 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  code, kbd, .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace; font-size: 0.92em; }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  /* Layout */
+  .page { max-width: 1360px; margin: 0 auto; padding: 40px 28px 80px; }
+  header.top {
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 28px;
+  }
+  header.top .brand { font-family: ui-monospace, monospace; color: var(--accent); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  header.top .tag { color: var(--muted); font-size: 13px; }
+  header.top .meta { margin-left: auto; color: var(--dim); font-size: 12px; font-family: ui-monospace, monospace; }
+
+  nav.toc {
+    display: flex; flex-wrap: wrap; gap: 8px 14px;
+    padding: 10px 12px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 36px; font-size: 12px;
+  }
+  nav.toc a { color: var(--muted); font-family: ui-monospace, monospace; }
+  nav.toc a::before { content: "› "; color: var(--faint); }
+
+  section { margin: 48px 0; scroll-margin-top: 24px; }
+  section > h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 4px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section > h2 .num { color: var(--dim); font-family: ui-monospace, monospace; font-weight: 400; }
+  section > .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; max-width: 920px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px;
+  }
+  .panel.compact { padding: 12px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 1080px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* Tables */
+  table.dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.dt th, table.dt td {
+    padding: 8px 10px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+  table.dt th {
+    font-weight: 500; color: var(--muted); font-family: ui-monospace, monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    background: var(--panel-2);
+  }
+  table.dt code { color: var(--text); }
+  table.dt tr:last-child td { border-bottom: 0; }
+  table.dt tbody tr:hover { background: rgba(255,255,255,0.015); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: ui-monospace, monospace; font-size: 10px;
+    padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .pill.done { color: #86efac; border-color: #14532d; background: rgba(20, 83, 45, 0.18); }
+  .pill.next { color: #fcd34d; border-color: #78350f; background: rgba(120, 53, 15, 0.18); }
+  .pill.idea { color: #93c5fd; border-color: #1e3a8a; background: rgba(30, 58, 138, 0.18); }
+  .pill.gap  { color: #fca5a5; border-color: #7f1d1d; background: rgba(127, 29, 29, 0.18); }
+  .pill.static { color: var(--static); border-color: #14532d; background: rgba(20, 83, 45, 0.18); }
+  .pill.dynamic { color: var(--dynamic); border-color: #1e3a8a; background: rgba(30, 58, 138, 0.18); }
+  .pill.agent { color: var(--agent); border-color: #78350f; background: rgba(120, 53, 15, 0.18); }
+  .pill.user  { color: var(--user); border-color: #14532d; background: rgba(20, 83, 45, 0.18); }
+
+  /* SVG */
+  .diagram { width: 100%; height: auto; display: block; }
+  .diagram .box-bg { fill: var(--panel-2); stroke: var(--border-strong); stroke-width: 1.2; }
+  .diagram .box-bg.accent { stroke: var(--accent); }
+  .diagram .box-bg.static { stroke: var(--static); }
+  .diagram .box-bg.dynamic { stroke: var(--dynamic); }
+  .diagram .box-bg.persist { stroke: #818cf8; }
+  .diagram .box-bg.egress  { stroke: #fb7185; }
+  .diagram .box-bg.surface { stroke: var(--accent); }
+  .diagram text { fill: var(--text); font-family: ui-monospace, monospace; font-size: 11px; }
+  .diagram text.title { font-size: 12px; font-weight: 600; fill: var(--text); }
+  .diagram text.sub { fill: var(--dim); font-size: 9.5px; }
+  .diagram text.lane { fill: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; }
+  .diagram .arrow { stroke: var(--faint); stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
+  .diagram .arrow.write { stroke: var(--accent); }
+  .diagram .arrow.read  { stroke: #60a5fa; }
+  .diagram .arrow.learn { stroke: #a78bfa; stroke-dasharray: 4 3; }
+
+  /* Inline KV list */
+  .kvs { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12px; }
+  .kvs .k { color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kvs .v { color: var(--text); }
+  .kvs .v code { color: var(--accent-2); }
+
+  /* Legend */
+  .legend { display: inline-flex; flex-wrap: wrap; gap: 12px; padding: 6px 8px; font-size: 11px; color: var(--muted); }
+  .legend .li { display: inline-flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; }
+  .legend .sw { width: 18px; height: 6px; border-radius: 2px; display: inline-block; }
+
+  /* "Slot" — empty planning card */
+  .slot {
+    border: 1px dashed var(--border-strong); border-radius: 8px;
+    padding: 14px; background: var(--panel-2);
+    color: var(--muted); font-size: 12px;
+  }
+  .slot h4 { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+  .slot ul { margin: 4px 0 0 18px; padding: 0; }
+  .slot li { margin: 2px 0; }
+
+  footer.bottom {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+
+  /* Print niceties */
+  @media print {
+    body { background: white; color: black; }
+    .panel, .slot { background: white; border-color: #ddd; }
+    section > h2 { color: #b45309; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="top">
+  <span class="brand">darkseed</span>
+  <span class="tag">system architecture · planning surface</span>
+  <span class="meta">v0.2 · drafted 2026-05-23</span>
+</header>
+
+<nav class="toc">
+  <a href="#summary">summary</a>
+  <a href="#system-map">system map</a>
+  <a href="#data-model">data model</a>
+  <a href="#evidence-taxonomy">evidence taxonomy</a>
+  <a href="#api-surface">api surface</a>
+  <a href="#learning-loop">learning loop</a>
+  <a href="#reports">report ingestion</a>
+  <a href="#device-broker">device broker</a>
+  <a href="#indicator-kb">indicator KB</a>
+  <a href="#verdict-feedback">verdict &amp; feedback</a>
+  <a href="#capabilities">capabilities</a>
+  <a href="#tradeoffs">design trade-offs</a>
+  <a href="#roadmap">roadmap</a>
+  <a href="#planning-slots">planning slots</a>
+</nav>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="summary">
+  <h2><span class="num">§0</span> One-line summary</h2>
+  <div class="panel">
+    <p style="margin: 0; font-size: 15px; line-height: 1.55;">
+      A local <strong>collaborative attack-chain workbench</strong> where researchers and AI agents both author MITRE-aligned kill chains and attach rich evidence (Frida traces, HAR, PCAP, source artifacts, sandbox screenshots).
+      Three intake paths feed the corpus: (1) <strong>markdown reports</strong> from prior investigations are ingested into chains by an agent, (2) <strong>new apps</strong> arrive via a <strong>Pixel 7 broker device</strong> as job tickets and are auto-analyzed by an agentic worker, (3) <strong>knowledge-base indicators</strong> (benign + malicious pools of packages / domains / ELF hashes) bias every investigation.
+      Every researcher decision (<em>agree · disagree · edit · flip · verify</em>) — at the chain verdict, node, or evidence level — feeds a labeled corpus that agents read back to improve over time.
+    </p>
+  </div>
+  <div class="grid-3" style="margin-top: 16px;">
+    <div class="panel compact">
+      <div class="kvs">
+        <span class="k">runs</span><span class="v">100% local — no cloud dependency</span>
+        <span class="k">storage</span><span class="v"><code>SQLite</code> + content-addressed blobs on disk</span>
+        <span class="k">surfaces</span><span class="v">dashboard (Vite/React) + REST API (Hono) + CLI imports</span>
+      </div>
+    </div>
+    <div class="panel compact">
+      <div class="kvs">
+        <span class="k">primary user</span><span class="v">malware / threat researcher</span>
+        <span class="k">co-author</span><span class="v">N specialized AI agents</span>
+        <span class="k">unit of work</span><span class="v">an <em>attack chain</em> — a DAG of MITRE techniques</span>
+      </div>
+    </div>
+    <div class="panel compact">
+      <div class="kvs">
+        <span class="k">today</span><span class="v">1000 chains · 6145 nodes · 38329 evidence · 2 labels</span>
+        <span class="k">next</span><span class="v">+ reports · apps · jobs · indicators · device_sync tables</span>
+        <span class="k">categories</span><span class="v">riskware · toll_fraud · phishing</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="system-map">
+  <h2><span class="num">§1</span> System map</h2>
+  <p class="lead">Producers above (humans + agents + importers), single API in the middle, persistence below, egress at the bottom. Every write crosses the API — there is no back-channel into SQLite.</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 880" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="currentColor" style="color: var(--faint);"/>
+      </marker>
+      <marker id="arrowW" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/>
+      </marker>
+      <marker id="arrowR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#60a5fa"/>
+      </marker>
+      <marker id="arrowL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/>
+      </marker>
+    </defs>
+
+    <!-- LANE LABELS -->
+    <text class="lane" x="20" y="46">producers</text>
+    <text class="lane" x="20" y="410">surfaces</text>
+    <text class="lane" x="20" y="620">persistence</text>
+    <text class="lane" x="20" y="800">egress</text>
+
+    <!-- ── Producers — row 1 (human + agents) ── -->
+    <g>
+      <rect class="box-bg" x="120" y="60" width="160" height="74" rx="10"/>
+      <text class="title" x="140" y="86">Researcher</text>
+      <text class="sub" x="140" y="104">edits · uploads · review</text>
+      <text class="sub" x="140" y="118">agree / disagree / flip</text>
+
+      <rect class="box-bg static" x="300" y="60" width="150" height="74" rx="10"/>
+      <text class="title" x="320" y="86">Static agents</text>
+      <text class="sub" x="320" y="104">hash · YARA · manifest</text>
+      <text class="sub" x="320" y="118">decompiled · cert</text>
+
+      <rect class="box-bg dynamic" x="470" y="60" width="150" height="74" rx="10"/>
+      <text class="title" x="490" y="86">Dynamic agents</text>
+      <text class="sub" x="490" y="104">Frida · CAPE · MobSF</text>
+      <text class="sub" x="490" y="118">HAR · pcap · syscall</text>
+
+      <rect class="box-bg accent" x="640" y="60" width="160" height="74" rx="10"/>
+      <text class="title" x="660" y="86">Hunter / report agents</text>
+      <text class="sub" x="660" y="104">propose chains</text>
+      <text class="sub" x="660" y="118">ingest .md reports → chains</text>
+
+      <rect class="box-bg" x="820" y="60" width="160" height="74" rx="10"/>
+      <text class="title" x="840" y="86">App-worker agent</text>
+      <text class="sub" x="840" y="104">pulls jobs from queue</text>
+      <text class="sub" x="840" y="118">static + dynamic per APK</text>
+
+      <rect class="box-bg" x="1000" y="60" width="160" height="74" rx="10"/>
+      <text class="title" x="1020" y="86">Feed importers</text>
+      <text class="sub" x="1020" y="104">URLhaus · OpenPhish</text>
+      <text class="sub" x="1020" y="118">MalwareBazaar · custom</text>
+    </g>
+
+    <!-- ── Producers — row 2 (intake sources) ── -->
+    <g>
+      <rect class="box-bg accent" x="200" y="160" width="220" height="74" rx="10"/>
+      <text class="title" x="220" y="186">Report inbox (.md files)</text>
+      <text class="sub" x="220" y="204">data/reports/inbox/*.md</text>
+      <text class="sub" x="220" y="218">labels: tp · fp · flipped</text>
+
+      <rect class="box-bg accent" x="440" y="160" width="220" height="74" rx="10"/>
+      <text class="title" x="460" y="186">Device broker (Pixel 7)</text>
+      <text class="sub" x="460" y="204">&lt;DEVICE_ROOT&gt;/jobs/inbox/*.json</text>
+      <text class="sub" x="460" y="218">physical, portable — see §7</text>
+
+      <rect class="box-bg static" x="680" y="160" width="220" height="74" rx="10"/>
+      <text class="title" x="700" y="186">Indicator KB priors</text>
+      <text class="sub" x="700" y="204">benign + malicious pools</text>
+      <text class="sub" x="700" y="218">biases every agent investigation</text>
+    </g>
+
+    <!-- ── Surfaces ── -->
+    <g>
+      <rect class="box-bg surface" x="120" y="440" width="260" height="140" rx="12"/>
+      <text class="title" x="140" y="466">Dashboard</text>
+      <text class="sub" x="140" y="484">Vite + React + React Flow</text>
+      <text class="sub" x="140" y="500">3-pane: list · graph · evidence</text>
+      <text class="sub" x="140" y="516">+ modals: editor · uploader</text>
+      <text class="sub" x="140" y="532">+ queue · jobs · KB · reports</text>
+      <text class="sub" x="140" y="548">verdict/chain/node/evidence</text>
+      <text class="sub" x="140" y="564">feedback at every level</text>
+
+      <rect class="box-bg accent" x="420" y="440" width="320" height="140" rx="12"/>
+      <text class="title" x="440" y="466">API (Hono · Node 22)</text>
+      <text class="sub" x="440" y="484">CRUD + uploads + review queues</text>
+      <text class="sub" x="440" y="500">zod discriminated-union validation</text>
+      <text class="sub" x="440" y="516">x-actor-kind / x-actor-id provenance</text>
+      <text class="sub" x="440" y="532">FTS5 · TF-IDF · KB lookup</text>
+      <text class="sub" x="440" y="548">ingest reports · accept device sync</text>
+      <text class="sub" x="440" y="564">runs at <tspan fill="#fbbf24">:3001</tspan></text>
+
+      <rect class="box-bg accent" x="780" y="440" width="190" height="140" rx="12"/>
+      <text class="title" x="800" y="466">Job queue (§7)</text>
+      <text class="sub" x="800" y="484">jobs from device → here</text>
+      <text class="sub" x="800" y="500">app-worker pulls</text>
+      <text class="sub" x="800" y="516">state: queued/running</text>
+      <text class="sub" x="800" y="532">awaiting_review / verified</text>
+      <text class="sub" x="800" y="548">flipped</text>
+
+      <rect class="box-bg" x="1000" y="440" width="180" height="140" rx="12"/>
+      <text class="title" x="1020" y="466">Agent SDK (planned)</text>
+      <text class="sub" x="1020" y="484">thin Python/TS wrapper</text>
+      <text class="sub" x="1020" y="500">post-proposal / fetch-context</text>
+      <text class="sub" x="1020" y="516">retries · auth-key per agent</text>
+      <text class="sub" x="1020" y="532">streaming event log</text>
+    </g>
+
+    <!-- ── Persistence ── -->
+    <g>
+      <rect class="box-bg persist" x="80" y="640" width="260" height="140" rx="12"/>
+      <text class="title" x="100" y="666">SQLite (WAL)</text>
+      <text class="sub" x="100" y="684">chains · nodes · edges · evidence</text>
+      <text class="sub" x="100" y="700">iocs · comments · audit_log · labels</text>
+      <text class="sub" x="100" y="716">+ reports · apps · jobs (§6, §7)</text>
+      <text class="sub" x="100" y="732">+ indicators · device_sync (§8)</text>
+      <text class="sub" x="100" y="748">+ verdict_feedback (§9)</text>
+      <text class="sub" x="100" y="764">node_terms · term_df · chains_fts</text>
+
+      <rect class="box-bg persist" x="360" y="640" width="240" height="140" rx="12"/>
+      <text class="title" x="380" y="666">Blob store</text>
+      <text class="sub" x="380" y="684">content-addressed by SHA-256</text>
+      <text class="sub" x="380" y="700">data/blobs/&lt;ab&gt;/&lt;sha&gt;</text>
+      <text class="sub" x="380" y="716">refcounted in <tspan fill="#fbbf24">blobs</tspan> table</text>
+      <text class="sub" x="380" y="732">HAR · PCAP · ndjson · APK</text>
+      <text class="sub" x="380" y="748">images · decompiled DEX</text>
+      <text class="sub" x="380" y="764">+ raw .md report bodies</text>
+
+      <rect class="box-bg static" x="620" y="640" width="240" height="140" rx="12"/>
+      <text class="title" x="640" y="666">Indicator KB (§8)</text>
+      <text class="sub" x="640" y="684">two pools: benign + malicious</text>
+      <text class="sub" x="640" y="700">types: package · domain · ip · cert</text>
+      <text class="sub" x="640" y="716">hash · elf · ja3 · …</text>
+      <text class="sub" x="640" y="732">consulted on every agent run</text>
+      <text class="sub" x="640" y="748">synced to device for offline use</text>
+      <text class="sub" x="640" y="764">promotable from confirmed IOCs</text>
+
+      <rect class="box-bg persist" x="880" y="640" width="240" height="140" rx="12"/>
+      <text class="title" x="900" y="666">Vector store (next)</text>
+      <text class="sub" x="900" y="684">sqlite-vec · MiniLM-L6 embeddings</text>
+      <text class="sub" x="900" y="700">replaces / augments TF-IDF</text>
+      <text class="sub" x="900" y="716">nearest-neighbor for RAG</text>
+      <text class="sub" x="900" y="732">"chains like this one"</text>
+      <text class="sub" x="900" y="748">indexes report bodies too</text>
+    </g>
+
+    <!-- ── Egress ── -->
+    <g>
+      <rect class="box-bg egress" x="80" y="810" width="170" height="50" rx="8"/>
+      <text class="title" x="100" y="833">STIX 2.1</text>
+      <text class="sub" x="100" y="848">/api/export/stix/:id</text>
+
+      <rect class="box-bg egress" x="270" y="810" width="170" height="50" rx="8"/>
+      <text class="title" x="290" y="833">JSONL bulk</text>
+      <text class="sub" x="290" y="848">/api/export/jsonl</text>
+
+      <rect class="box-bg egress" x="460" y="810" width="180" height="50" rx="8"/>
+      <text class="title" x="480" y="833">Training labels</text>
+      <text class="sub" x="480" y="848">/api/labels.jsonl</text>
+
+      <rect class="box-bg egress" x="660" y="810" width="190" height="50" rx="8"/>
+      <text class="title" x="680" y="833">Device push-back (§7)</text>
+      <text class="sub" x="680" y="848">verdicts · KB · reports → device</text>
+
+      <rect class="box-bg egress" x="870" y="810" width="170" height="50" rx="8"/>
+      <text class="title" x="890" y="833">MISP (planned)</text>
+      <text class="sub" x="890" y="848">/api/export/misp/:id</text>
+
+      <rect class="box-bg egress" x="1060" y="810" width="170" height="50" rx="8"/>
+      <text class="title" x="1080" y="833">Webhooks (planned)</text>
+      <text class="sub" x="1080" y="848">on verified-finding</text>
+    </g>
+
+    <!-- ── Arrows: producers → API ── -->
+    <g>
+      <path class="arrow write" d="M 200 134 C 200 320, 540 380, 540 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 375 134 C 375 320, 560 380, 560 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 545 134 C 545 320, 580 380, 580 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 720 134 C 720 320, 600 380, 600 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 900 134 C 900 320, 640 380, 640 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 1080 134 C 1080 320, 680 380, 680 440" marker-end="url(#arrowW)"/>
+      <!-- intake row -->
+      <path class="arrow write" d="M 310 234 C 310 350, 540 400, 540 440" marker-end="url(#arrowW)"/>
+      <path class="arrow write" d="M 550 234 C 550 350, 850 400, 850 440" marker-end="url(#arrowW)"/>
+      <path class="arrow read" d="M 790 234 C 790 350, 700 400, 700 440" marker-end="url(#arrowR)"/>
+    </g>
+
+    <!-- ── Arrows: dashboard ↔ API ── -->
+    <g>
+      <path class="arrow read" d="M 380 500 L 420 500" marker-end="url(#arrowR)"/>
+      <path class="arrow write" d="M 420 530 L 380 530" marker-end="url(#arrowW)"/>
+    </g>
+
+    <!-- ── Arrows: API ↔ persistence ── -->
+    <g>
+      <path class="arrow" d="M 540 580 C 540 615, 220 615, 220 640"/>
+      <path class="arrow" d="M 580 580 C 580 615, 470 615, 470 640"/>
+      <path class="arrow" d="M 620 580 C 620 615, 720 615, 720 640"/>
+      <path class="arrow learn" d="M 660 580 C 660 615, 970 615, 970 640" marker-end="url(#arrowL)"/>
+    </g>
+
+    <!-- ── Arrows: API/queue → egress ── -->
+    <g>
+      <path class="arrow" d="M 500 580 C 500 720, 170 760, 170 810"/>
+      <path class="arrow" d="M 540 580 C 540 720, 360 760, 360 810"/>
+      <path class="arrow" d="M 580 580 C 580 720, 555 760, 555 810"/>
+      <path class="arrow write" d="M 870 580 C 870 720, 750 760, 750 810" marker-end="url(#arrowW)"/>
+      <path class="arrow" d="M 680 580 C 680 720, 950 760, 950 810"/>
+      <path class="arrow" d="M 720 580 C 720 720, 1140 760, 1140 810"/>
+    </g>
+
+    <!-- Job queue ↔ App-worker (proxied through API) -->
+    <path class="arrow read" d="M 870 510 C 950 480, 980 350, 900 134" marker-end="url(#arrowR)"/>
+    <path class="arrow write" d="M 920 134 C 990 320, 920 440, 880 510" marker-end="url(#arrowW)"/>
+
+    <!-- Agent SDK → API -->
+    <path class="arrow write" d="M 1080 580 C 1080 600, 760 600, 740 580" marker-end="url(#arrowW)"/>
+  </svg>
+  <div class="legend">
+    <span class="li"><span class="sw" style="background:#f59e0b"></span>write (producer → api)</span>
+    <span class="li"><span class="sw" style="background:#60a5fa"></span>read (dashboard ← api)</span>
+    <span class="li"><span class="sw" style="background:#a78bfa; opacity:.8"></span>future / planned</span>
+    <span class="li"><span class="sw" style="background:#52525b"></span>internal</span>
+  </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="data-model">
+  <h2><span class="num">§2</span> Data model</h2>
+  <p class="lead">All entities live in one SQLite database. Hot relations are <code>chain → node → evidence</code> and the side tables that close the learning loop (<code>audit_log</code>, <code>labels</code>).</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 560" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#71717a"/>
+      </marker>
+    </defs>
+
+    <!-- chains -->
+    <g>
+      <rect class="box-bg accent" x="60" y="80" width="220" height="180" rx="10"/>
+      <text class="title" x="80" y="106">chains</text>
+      <text class="sub" x="80" y="124">id (pk)</text>
+      <text class="sub" x="80" y="140">category · family · source</text>
+      <text class="sub" x="80" y="156">seed_ioc_type · seed_ioc_value</text>
+      <text class="sub" x="80" y="172">severity · severity_score</text>
+      <text class="sub" x="80" y="188">summary · tags_json</text>
+      <text class="sub" x="80" y="204">status (accepted/proposed/archived)</text>
+      <text class="sub" x="80" y="220">first_seen · created/updated_at</text>
+      <text class="sub" x="80" y="236">created_by_kind/id</text>
+    </g>
+
+    <!-- chain_nodes -->
+    <g>
+      <rect class="box-bg accent" x="360" y="80" width="240" height="180" rx="10"/>
+      <text class="title" x="380" y="106">chain_nodes</text>
+      <text class="sub" x="380" y="124">id (pk)</text>
+      <text class="sub" x="380" y="140">chain_id (fk → chains.id)</text>
+      <text class="sub" x="380" y="156">step · technique_id · technique_name</text>
+      <text class="sub" x="380" y="172">tactic · title · description</text>
+      <text class="sub" x="380" y="188">static_agent_note · dynamic_agent_note</text>
+      <text class="sub" x="380" y="204">status · created_by_kind/id</text>
+      <text class="sub" x="380" y="236">indices: chain, technique, status</text>
+    </g>
+
+    <!-- chain_edges -->
+    <g>
+      <rect class="box-bg" x="360" y="290" width="240" height="80" rx="10"/>
+      <text class="title" x="380" y="316">chain_edges</text>
+      <text class="sub" x="380" y="334">chain_id · from_node · to_node · label</text>
+      <text class="sub" x="380" y="352">PK (chain_id, from, to)</text>
+    </g>
+
+    <!-- evidence -->
+    <g>
+      <rect class="box-bg dynamic" x="680" y="80" width="280" height="240" rx="10"/>
+      <text class="title" x="700" y="106">evidence</text>
+      <text class="sub" x="700" y="124">id (pk)</text>
+      <text class="sub" x="700" y="140">node_id (fk → chain_nodes.id)</text>
+      <text class="sub" x="700" y="156">category (static | dynamic)</text>
+      <text class="sub" x="700" y="172">kind (discriminator, 20+ values)</text>
+      <text class="sub" x="700" y="188">label · value (inline)</text>
+      <text class="sub" x="700" y="204">payload_json (per-kind schema)</text>
+      <text class="sub" x="700" y="220">blob_sha256 · blob_mime · blob_size</text>
+      <text class="sub" x="700" y="236">meta_json · timestamp_ms</text>
+      <text class="sub" x="700" y="252">verification_status / method / by / at</text>
+      <text class="sub" x="700" y="268">status · created_by_kind/id</text>
+      <text class="sub" x="700" y="294">indices: node, kind, status, blob</text>
+    </g>
+
+    <!-- iocs -->
+    <g>
+      <rect class="box-bg static" x="360" y="400" width="240" height="100" rx="10"/>
+      <text class="title" x="380" y="426">iocs</text>
+      <text class="sub" x="380" y="444">id (pk)</text>
+      <text class="sub" x="380" y="460">node_id (fk)</text>
+      <text class="sub" x="380" y="476">type · value · source</text>
+      <text class="sub" x="380" y="492">indices: value, (type,value)</text>
+    </g>
+
+    <!-- blobs -->
+    <g>
+      <rect class="box-bg" x="1010" y="80" width="220" height="120" rx="10"/>
+      <text class="title" x="1030" y="106">blobs</text>
+      <text class="sub" x="1030" y="124">sha256 (pk)</text>
+      <text class="sub" x="1030" y="140">size · mime · filename</text>
+      <text class="sub" x="1030" y="156">ref_count</text>
+      <text class="sub" x="1030" y="180">file on disk:</text>
+      <text class="sub" x="1030" y="194">data/blobs/&lt;ab&gt;/&lt;sha&gt;</text>
+    </g>
+
+    <!-- comments -->
+    <g>
+      <rect class="box-bg" x="60" y="290" width="220" height="100" rx="10"/>
+      <text class="title" x="80" y="316">comments</text>
+      <text class="sub" x="80" y="334">id (pk) · node_id (fk)</text>
+      <text class="sub" x="80" y="350">body_md</text>
+      <text class="sub" x="80" y="366">created_by_kind/id · created_at</text>
+    </g>
+
+    <!-- audit_log -->
+    <g>
+      <rect class="box-bg" x="60" y="410" width="220" height="120" rx="10"/>
+      <text class="title" x="80" y="436">audit_log</text>
+      <text class="sub" x="80" y="454">id · entity_type · entity_id</text>
+      <text class="sub" x="80" y="470">action · actor_kind / actor_id</text>
+      <text class="sub" x="80" y="486">diff_json · created_at</text>
+      <text class="sub" x="80" y="510">every mutation goes here</text>
+    </g>
+
+    <!-- labels -->
+    <g>
+      <rect class="box-bg accent" x="1010" y="240" width="220" height="160" rx="10"/>
+      <text class="title" x="1030" y="266">labels (training signals)</text>
+      <text class="sub" x="1030" y="284">id · entity_type · entity_id</text>
+      <text class="sub" x="1030" y="300">signal (approved/rejected/edited</text>
+      <text class="sub" x="1030" y="314"> /verified/refuted)</text>
+      <text class="sub" x="1030" y="330">before_json · after_json</text>
+      <text class="sub" x="1030" y="346">source_agent_kind/id</text>
+      <text class="sub" x="1030" y="362">created_by_kind/id</text>
+      <text class="sub" x="1030" y="386">→ exportable as JSONL</text>
+    </g>
+
+    <!-- TF-IDF -->
+    <g>
+      <rect class="box-bg" x="1010" y="430" width="220" height="100" rx="10"/>
+      <text class="title" x="1030" y="456">node_terms · term_df</text>
+      <text class="sub" x="1030" y="474">lexical retrieval index</text>
+      <text class="sub" x="1030" y="490">tokenize(title+desc+ioc+ev)</text>
+      <text class="sub" x="1030" y="506">cosine via SQL</text>
+    </g>
+
+    <!-- relations -->
+    <path d="M 280 170 L 360 170" stroke="#71717a" fill="none" marker-end="url(#arrow2)"/>
+    <path d="M 480 260 L 480 290" stroke="#71717a" fill="none" marker-end="url(#arrow2)"/>
+    <path d="M 480 260 L 480 400" stroke="#71717a" fill="none" stroke-dasharray="3 3" marker-end="url(#arrow2)"/>
+    <path d="M 600 170 L 680 170" stroke="#71717a" fill="none" marker-end="url(#arrow2)"/>
+    <path d="M 960 200 L 1010 130" stroke="#71717a" fill="none" marker-end="url(#arrow2)"/>
+    <path d="M 480 260 C 480 280, 200 290, 200 290" stroke="#71717a" fill="none" marker-end="url(#arrow2)"/>
+    <path d="M 720 260 C 880 280, 1010 320, 1010 320" stroke="#a78bfa" fill="none" stroke-dasharray="4 3" marker-end="url(#arrow2)"/>
+    <path d="M 480 260 C 480 300, 880 340, 1010 320" stroke="#a78bfa" fill="none" stroke-dasharray="4 3" marker-end="url(#arrow2)"/>
+    <path d="M 600 170 C 700 460, 850 460, 1010 470" stroke="#71717a" fill="none" stroke-dasharray="3 3" marker-end="url(#arrow2)"/>
+  </svg>
+  <div class="legend">
+    <span class="li">solid = foreign key</span>
+    <span class="li">dashed = soft reference / index</span>
+    <span class="li"><span class="sw" style="background:#a78bfa"></span>label / similarity flow</span>
+  </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="evidence-taxonomy">
+  <h2><span class="num">§3</span> Evidence taxonomy</h2>
+  <p class="lead">Every evidence row has a <code>category</code> (static vs dynamic) and a <code>kind</code> (a discriminator). Each <code>kind</code> has its own zod payload schema (server-side) and its own React viewer (client-side). Adding a new kind = write one zod schema + one viewer.</p>
+
+  <table class="dt">
+    <thead>
+      <tr>
+        <th>kind</th>
+        <th>cat</th>
+        <th>typical producer</th>
+        <th>payload shape</th>
+        <th>viewer</th>
+        <th>status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><code>hash</code></td><td><span class="pill static">static</span></td><td>any static analyzer</td><td>inline value</td><td>hash + copy</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>permission</code></td><td><span class="pill static">static</span></td><td>MobSF / apktool</td><td>inline</td><td>code body</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>manifest_excerpt</code></td><td><span class="pill static">static</span></td><td>apktool / aapt</td><td>inline XML</td><td>code (xml)</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>yara_hit</code></td><td><span class="pill static">static</span></td><td>yara runner</td><td>rule + match meta</td><td>rule + offsets</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>dom_snippet</code></td><td><span class="pill static">static</span></td><td>phish-kit fetcher</td><td>inline HTML</td><td>code (html)</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>cert</code></td><td><span class="pill static">static</span></td><td>tls scanner</td><td>issuer + validity</td><td>kv display</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>url_target</code></td><td><span class="pill static">static</span></td><td>kit fetcher</td><td>URL</td><td>copy link</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>source_artifact</code></td><td><span class="pill static">static</span></td><td>JADX · Ghidra · disassembler</td><td>blob (file) + <code>{language, highlights[]}</code></td><td>language tag + highlight lines + download</td><td><span class="pill done">done</span></td></tr>
+
+      <tr><td><code>syscall</code></td><td><span class="pill dynamic">dynamic</span></td><td>strace / ptrace / Frida</td><td>inline trace</td><td>preformatted</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>network_request</code></td><td><span class="pill dynamic">dynamic</span></td><td>sandbox</td><td>method/host/path/status/bytes</td><td>request line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>sms_send</code></td><td><span class="pill dynamic">dynamic</span></td><td>Frida hooks on SmsManager</td><td>shortcode + body</td><td>kv display</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>permission_request</code></td><td><span class="pill dynamic">dynamic</span></td><td>sandbox / Frida</td><td>permission name + outcome</td><td>line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>ui_capture</code></td><td><span class="pill dynamic">dynamic</span></td><td>screenshot agent</td><td>image blob</td><td><strong>inline image</strong></td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>credential_capture</code></td><td><span class="pill dynamic">dynamic</span></td><td>Frida overlay hook</td><td>field + app + length</td><td>line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>file_write</code></td><td><span class="pill dynamic">dynamic</span></td><td>sandbox FS monitor</td><td>path + bytes</td><td>line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>process_spawn</code></td><td><span class="pill dynamic">dynamic</span></td><td>sandbox process monitor</td><td>argv</td><td>line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>click_chain</code></td><td><span class="pill dynamic">dynamic</span></td><td>headless browser</td><td>redirect chain</td><td>line</td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>frida_trace</code></td><td><span class="pill dynamic">dynamic</span></td><td>Frida runner</td><td>blob (.ndjson) + <code>{events[], scriptBlobSha256?}</code></td><td><strong>event timeline table</strong></td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>har_capture</code></td><td><span class="pill dynamic">dynamic</span></td><td>HTTPToolkit / mitmproxy / Burp</td><td>blob (.har) + <code>{entries[]}</code></td><td><strong>request waterfall (status-colored)</strong></td><td><span class="pill done">done</span></td></tr>
+      <tr><td><code>pcap_capture</code></td><td><span class="pill dynamic">dynamic</span></td><td>tcpdump / Wireshark</td><td>blob (.pcap) + <code>{flows[], totals}</code></td><td>flow table + download</td><td><span class="pill next">parser pending (needs tshark)</span></td></tr>
+
+      <tr><td><code>memory_dump</code></td><td><span class="pill dynamic">dynamic</span></td><td>volatility / native</td><td>blob</td><td>—</td><td><span class="pill idea">proposed</span></td></tr>
+      <tr><td><code>jvmti_trace</code></td><td><span class="pill dynamic">dynamic</span></td><td>JVMTI agent</td><td>blob (.jfr/.ndjson)</td><td>—</td><td><span class="pill idea">proposed</span></td></tr>
+      <tr><td><code>video_capture</code></td><td><span class="pill dynamic">dynamic</span></td><td>sandbox screen recorder</td><td>blob (mp4/webm)</td><td>inline &lt;video&gt;</td><td><span class="pill idea">proposed</span></td></tr>
+      <tr><td><code>llm_judgment</code></td><td><span class="pill dynamic">dynamic</span></td><td>LLM judge agent</td><td><code>{prompt, verdict, confidence, model}</code></td><td>verdict + reasoning</td><td><span class="pill idea">proposed (closes the loop)</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="api-surface">
+  <h2><span class="num">§4</span> API surface</h2>
+  <p class="lead">Every write requires <code>x-actor-kind</code> and <code>x-actor-id</code> headers — provenance is non-optional. Agents post proposals (<code>status: 'proposed'</code>) and researchers run them through the review queue.</p>
+
+  <div class="grid-2">
+    <div class="panel compact">
+      <h3 style="margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em;">Reads</h3>
+      <table class="dt">
+        <tr><td><code>GET /api/health</code></td><td>liveness</td></tr>
+        <tr><td><code>GET /api/index</code></td><td>chain summaries (list view)</td></tr>
+        <tr><td><code>GET /api/chains/:id</code></td><td>full chain + nodes + evidence + IOCs + edges</td></tr>
+        <tr><td><code>GET /api/blobs/:sha</code></td><td>raw blob (inline)</td></tr>
+        <tr><td><code>GET /api/blobs/:sha?download=1</code></td><td>force-download header</td></tr>
+        <tr><td><code>GET /api/nodes/:id/comments</code></td><td>comment thread</td></tr>
+        <tr><td><code>GET /api/audit?entity_type=&entity_id=</code></td><td>mutation log</td></tr>
+        <tr><td><code>GET /api/similar/:nodeId</code></td><td>TF-IDF cross-corpus neighbors</td></tr>
+        <tr><td><code>GET /api/queue</code></td><td>pending proposals (nodes + evidence)</td></tr>
+        <tr><td><code>GET /api/labels</code></td><td>recent training labels (JSON)</td></tr>
+      </table>
+    </div>
+    <div class="panel compact">
+      <h3 style="margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em;">Writes</h3>
+      <table class="dt">
+        <tr><td><code>POST /api/chains</code></td><td>new chain (manual or agent)</td></tr>
+        <tr><td><code>PATCH /api/chains/:id</code></td><td>family / severity / status / tags</td></tr>
+        <tr><td><code>POST /api/chains/:id/nodes</code></td><td>add node (status: accepted | proposed, optional <code>after</code>)</td></tr>
+        <tr><td><code>PATCH /api/chains/:cid/nodes/:nid</code></td><td>edit step</td></tr>
+        <tr><td><code>DELETE /api/chains/:cid/nodes/:nid</code></td><td>delete step (cascades evidence)</td></tr>
+        <tr><td><code>POST /api/chains/:id/edges</code></td><td>connect two steps</td></tr>
+        <tr><td><code>DELETE /api/chains/:id/edges</code></td><td>disconnect</td></tr>
+        <tr><td><code>POST /api/nodes/:id/evidence</code></td><td>attach JSON evidence (typed)</td></tr>
+        <tr><td><code>POST /api/nodes/:id/evidence/upload</code></td><td>multipart upload, auto-kind detection</td></tr>
+        <tr><td><code>POST /api/nodes/:nid/review</code></td><td>accept / reject / edit (writes label)</td></tr>
+        <tr><td><code>POST /api/evidence/:id/review</code></td><td>accept / reject (writes label)</td></tr>
+        <tr><td><code>POST /api/evidence/:id/verify</code></td><td>cycle verification status</td></tr>
+        <tr><td><code>POST /api/nodes/:id/comments</code></td><td>add comment (markdown)</td></tr>
+        <tr><td><code>POST /api/admin/reindex-corpus</code></td><td>rebuild TF-IDF index</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel compact" style="margin-top: 16px;">
+    <h3 style="margin: 0 0 8px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em;">Exports</h3>
+    <table class="dt">
+      <tr><td><code>GET /api/export/stix/:chainId</code></td><td>STIX 2.1 Bundle: identity + attack-pattern × N + indicator × M + relationships</td></tr>
+      <tr><td><code>GET /api/export/jsonl</code></td><td>NDJSON of all chains (one per line)</td></tr>
+      <tr><td><code>GET /api/labels.jsonl</code></td><td>training-signal dump for downstream finetuning / eval</td></tr>
+      <tr><td><code>GET /api/export/stats</code></td><td>live corpus counters</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="learning-loop">
+  <h2><span class="num">§5</span> Agent learning loop</h2>
+  <p class="lead">The pipeline that turns researcher judgment into reusable signal. Every accept/reject/edit/verify writes a <code>label</code> row that's exportable as JSONL — that's the training data for the next-generation agents.</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/>
+      </marker>
+    </defs>
+
+    <!-- 1 -->
+    <g>
+      <rect class="box-bg accent" x="40" y="80" width="200" height="120" rx="10"/>
+      <text class="title" x="60" y="106">① Agent observes</text>
+      <text class="sub" x="60" y="124">runs Frida / static / hunt</text>
+      <text class="sub" x="60" y="140">finds a candidate technique</text>
+      <text class="sub" x="60" y="156">OR new evidence</text>
+      <text class="sub" x="60" y="180">includes <tspan fill="#fbbf24">x-actor-id</tspan>:</text>
+      <text class="sub" x="60" y="194">hunter-v0.3</text>
+    </g>
+
+    <path d="M 240 140 L 320 140" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
+
+    <!-- 2 -->
+    <g>
+      <rect class="box-bg dynamic" x="320" y="80" width="220" height="120" rx="10"/>
+      <text class="title" x="340" y="106">② POST proposal</text>
+      <text class="sub" x="340" y="124">/api/chains/:id/nodes</text>
+      <text class="sub" x="340" y="140">status: 'proposed'</text>
+      <text class="sub" x="340" y="156">audit_log: 'proposed'</text>
+      <text class="sub" x="340" y="180">node appears in graph</text>
+      <text class="sub" x="340" y="194">with ⚑ amber border</text>
+    </g>
+
+    <path d="M 540 140 L 620 140" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
+
+    <!-- 3 -->
+    <g>
+      <rect class="box-bg surface" x="620" y="80" width="220" height="120" rx="10"/>
+      <text class="title" x="640" y="106">③ Review queue</text>
+      <text class="sub" x="640" y="124">researcher opens ⚑ queue</text>
+      <text class="sub" x="640" y="140">sees nodes + evidence</text>
+      <text class="sub" x="640" y="156">awaiting decision</text>
+      <text class="sub" x="640" y="180">filters by source agent /</text>
+      <text class="sub" x="640" y="194">family / category</text>
+    </g>
+
+    <path d="M 840 140 L 920 140" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
+
+    <!-- 4 -->
+    <g>
+      <rect class="box-bg static" x="920" y="40" width="220" height="80" rx="10"/>
+      <text class="title" x="940" y="66">④a accept</text>
+      <text class="sub" x="940" y="84">status → 'accepted'</text>
+      <text class="sub" x="940" y="100">label.signal = 'approved'</text>
+
+      <rect class="box-bg egress" x="920" y="135" width="220" height="80" rx="10"/>
+      <text class="title" x="940" y="161">④b reject</text>
+      <text class="sub" x="940" y="179">status → 'refuted'</text>
+      <text class="sub" x="940" y="195">label.signal = 'rejected'</text>
+
+      <rect class="box-bg accent" x="920" y="230" width="220" height="80" rx="10"/>
+      <text class="title" x="940" y="256">④c edit + accept</text>
+      <text class="sub" x="940" y="274">label.signal = 'edited'</text>
+      <text class="sub" x="940" y="290">stores before/after diff</text>
+    </g>
+
+    <!-- back to loop -->
+    <path d="M 1140 70 C 1220 70, 1240 360, 600 360" stroke="#a78bfa" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#arr3)"/>
+    <path d="M 1140 165 L 1180 165 L 1180 360 L 600 360" stroke="#a78bfa" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#arr3)"/>
+    <path d="M 1140 260 C 1180 260, 1190 360, 600 360" stroke="#a78bfa" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#arr3)"/>
+
+    <!-- 5 -->
+    <g>
+      <rect class="box-bg persist" x="380" y="320" width="220" height="100" rx="10"/>
+      <text class="title" x="400" y="346">⑤ labels table</text>
+      <text class="sub" x="400" y="364">signal + before/after diff</text>
+      <text class="sub" x="400" y="380">source_agent_kind/id</text>
+      <text class="sub" x="400" y="396">created_by_kind/id (reviewer)</text>
+    </g>
+
+    <path d="M 380 370 L 290 370" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arr3)"/>
+
+    <!-- 6 -->
+    <g>
+      <rect class="box-bg egress" x="60" y="320" width="220" height="100" rx="10"/>
+      <text class="title" x="80" y="346">⑥ export to JSONL</text>
+      <text class="sub" x="80" y="364">/api/labels.jsonl</text>
+      <text class="sub" x="80" y="380">→ finetune / RAG context /</text>
+      <text class="sub" x="80" y="396">  agent-eval harness</text>
+    </g>
+
+    <!-- back to agent (closes loop) -->
+    <path d="M 60 380 C -10 380, -10 140, 40 140" stroke="#a78bfa" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#arr3)"/>
+
+    <text class="sub" x="0" y="460" style="font-size: 10px; fill: var(--dim);">
+      Dashed = label / feedback flow. Solid = forward request flow.
+    </text>
+  </svg>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px; font-size: 13px;">Why labels (not raw audit) drive learning</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        The <code>audit_log</code> records what changed. The <code>labels</code> table records what a researcher decided about an agent's claim — that's the supervision signal. Keeping them separate means: (a) we can purge audit noise without losing training data, (b) labels naturally include before/after diffs and the source agent, (c) the JSONL export is already in the shape an eval harness wants.
+      </p>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px; font-size: 13px;">Where retrieval fits</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Today retrieval is pure SQL TF-IDF over <code>node_terms</code>. When agents need "show me prior chains like this candidate" before they propose, they call <code>GET /api/similar/:nodeId</code>. Phase 4+ swaps that for sqlite-vec + MiniLM embeddings without touching the API contract.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="reports">
+  <h2><span class="num">§6</span> Report ingestion subsystem</h2>
+  <p class="lead">
+    A pool of <code>.md</code> reports — one report per investigated artifact or campaign — is the primary historical-knowledge intake. Each report carries a declared category and (optionally) a declared verdict <code>tp | fp</code>. The reviewer can later confirm or <em>flip</em> the verdict; flipped decisions are the highest-signal training data we have.
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 380" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+      <marker id="arrLR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+    </defs>
+
+    <text class="lane" x="20" y="46">intake</text>
+    <text class="lane" x="20" y="210">processing</text>
+    <text class="lane" x="20" y="340">corpus</text>
+
+    <rect class="box-bg accent" x="80" y="60" width="220" height="100" rx="10"/>
+    <text class="title" x="100" y="86">.md report files</text>
+    <text class="sub" x="100" y="104">data/reports/inbox/*.md</text>
+    <text class="sub" x="100" y="120">YAML frontmatter:</text>
+    <text class="sub" x="100" y="134">  category · declared_verdict</text>
+    <text class="sub" x="100" y="148">  declared_label: tp | fp | null</text>
+
+    <path d="M 300 110 L 380 110" stroke="#f59e0b" fill="none" marker-end="url(#arrR)"/>
+
+    <rect class="box-bg" x="380" y="60" width="220" height="100" rx="10"/>
+    <text class="title" x="400" y="86">file-watcher</text>
+    <text class="sub" x="400" y="104">chokidar on inbox dir</text>
+    <text class="sub" x="400" y="120">→ INSERT INTO reports</text>
+    <text class="sub" x="400" y="134">  status='pending'</text>
+    <text class="sub" x="400" y="148">  archives body to blob</text>
+
+    <path d="M 600 110 L 680 110" stroke="#f59e0b" fill="none" marker-end="url(#arrR)"/>
+
+    <rect class="box-bg dynamic" x="680" y="60" width="280" height="100" rx="10"/>
+    <text class="title" x="700" y="86">report-ingester agent</text>
+    <text class="sub" x="700" y="104">reads .md + KB priors</text>
+    <text class="sub" x="700" y="120">extracts TTPs, IOCs, evidence</text>
+    <text class="sub" x="700" y="134">emits a Chain (status='proposed')</text>
+    <text class="sub" x="700" y="148">writes Chain ↔ Report link</text>
+
+    <path d="M 960 110 L 1040 110" stroke="#f59e0b" fill="none" marker-end="url(#arrR)"/>
+
+    <rect class="box-bg surface" x="1040" y="60" width="200" height="100" rx="10"/>
+    <text class="title" x="1060" y="86">Reviewer queue</text>
+    <text class="sub" x="1060" y="104">opens proposed chain</text>
+    <text class="sub" x="1060" y="120">agree · disagree · edit</text>
+    <text class="sub" x="1060" y="134">confirms or FLIPS verdict</text>
+
+    <!-- Processing lane: chain row -->
+    <rect class="box-bg" x="200" y="220" width="260" height="100" rx="10"/>
+    <text class="title" x="220" y="246">reports table</text>
+    <text class="sub" x="220" y="264">declared_category · declared_label</text>
+    <text class="sub" x="220" y="280">effective_label (post-review)</text>
+    <text class="sub" x="220" y="296">flipped = (effective ≠ declared)</text>
+    <text class="sub" x="220" y="312">ingested_chain_id</text>
+
+    <rect class="box-bg accent" x="500" y="220" width="240" height="100" rx="10"/>
+    <text class="title" x="520" y="246">flipped → high-signal label</text>
+    <text class="sub" x="520" y="264">signal: 'flipped_tp_to_fp'</text>
+    <text class="sub" x="520" y="280">         'flipped_fp_to_tp'</text>
+    <text class="sub" x="520" y="296">captures: original verdict +</text>
+    <text class="sub" x="520" y="312">  reviewer reasoning (note)</text>
+
+    <rect class="box-bg dynamic" x="780" y="220" width="280" height="100" rx="10"/>
+    <text class="title" x="800" y="246">retrieval / RAG</text>
+    <text class="sub" x="800" y="264">future agents query report bodies</text>
+    <text class="sub" x="800" y="280">+ flipped-label history</text>
+    <text class="sub" x="800" y="296">to avoid making the same</text>
+    <text class="sub" x="800" y="312">misclassification twice</text>
+
+    <path class="arrow learn" d="M 1140 160 C 1140 200, 640 200, 640 220" marker-end="url(#arrLR)"/>
+    <path class="arrow learn" d="M 460 270 L 500 270" marker-end="url(#arrLR)"/>
+    <path class="arrow learn" d="M 740 270 L 780 270" marker-end="url(#arrLR)"/>
+  </svg>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px; font-size: 13px;">reports + apps tables (schema sketch — decided)</h4>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+-- one row per APK (a specific version of an artifact)
+CREATE TABLE apps (
+  id            TEXT PRIMARY KEY,    -- = apk_sha256
+  artifact_id   TEXT,                -- stable across versions
+                                     -- (package_name OR external stable id)
+  package_name  TEXT,
+  version_name  TEXT,
+  version_code  INTEGER,
+  apk_sha256    TEXT UNIQUE,
+  apk_blob_sha  TEXT,                -- fk → blobs.sha256 (optional)
+  first_seen_at TEXT
+);
+
+-- N reports per app (same APK can be investigated many times)
+-- N apps per artifact (one per version)
+CREATE TABLE reports (
+  id              TEXT PRIMARY KEY,
+  app_id          TEXT REFERENCES apps(id),   -- NULLABLE for legacy
+  source_path     TEXT,             -- path on inbox
+  filename        TEXT,
+  body_blob_sha   TEXT,             -- ref to blobs store (immutable)
+  declared_category TEXT,           -- riskware/toll_fraud/phishing
+  declared_label  TEXT,             -- 'tp' | 'fp' | NULL
+  effective_label TEXT,             -- after reviewer (NULL until reviewed)
+  flipped         INTEGER DEFAULT 0,
+  status          TEXT,             -- pending|processing|ingested|rejected
+  ingested_chain_id TEXT,           -- fk → chains.id
+  imported_at     TEXT,
+  processed_at    TEXT,
+  reviewed_at     TEXT,
+  reviewed_by_id  TEXT,
+  content_hash    TEXT              -- for idempotent re-ingest on .md edit
+);
+CREATE INDEX idx_reports_app ON reports(app_id);
+CREATE INDEX idx_reports_artifact ON reports(app_id);
+</pre>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px; font-size: 13px;">"flipped" semantics — why it matters</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+        Most labels say "agent guessed X, reviewer agreed". A <strong>flipped</strong> label says "the original source called this TP, but on inspection it's FP" (or vice versa). That's worth more than 10 regular labels because it teaches:
+      </p>
+      <ul style="margin: 0 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>which surface features are misleading</li>
+        <li>which classifiers / heuristics over-trigger</li>
+        <li>which reports / sources skew which direction</li>
+      </ul>
+      <p style="margin: 8px 0 0; color: var(--muted); font-size: 12px;">
+        We surface flipped reports as a dedicated "<strong>flip review</strong>" lane in the dashboard so disagreements with prior labelings are <em>visible</em>, not buried in the audit log.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="device-broker">
+  <h2><span class="num">§7</span> Device broker — Pixel 7 as portable job carrier</h2>
+  <p class="lead">
+    A Pixel 7 is the physical interface between two machines: the <strong>field machine</strong> (a separate system where apps are installed/observed and where job tickets are produced) and the <strong>darkseed machine</strong> (where analysis happens). The device is physically carried between them. Connection over USB-C; transfers via <code>adb pull</code> / <code>adb push</code>. Single-writer per directory: field system owns <code>jobs/inbox/</code>; darkseed owns <code>results/outbox/</code> and <code>kb/</code>. One machine ↔ one device at a time — no concurrent sharing. Paths are placeholders for now.
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrD1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+      <marker id="arrD2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#60a5fa"/></marker>
+    </defs>
+
+    <!-- Device -->
+    <rect class="box-bg accent" x="40" y="60" width="280" height="360" rx="14"/>
+    <text class="title" x="60" y="86">Pixel 7 (broker)</text>
+    <text class="sub" x="60" y="104">accessed via adb pull (USB-C)</text>
+    <text class="sub" x="60" y="120">portable between two machines</text>
+
+    <rect class="box-bg" x="60" y="140" width="240" height="60" rx="8"/>
+    <text class="sub" x="80" y="160" fill="#fbbf24" style="font-size: 11px;">&lt;DEVICE_ROOT&gt;/jobs/inbox/*.json</text>
+    <text class="sub" x="80" y="178">new job tickets from the field</text>
+    <text class="sub" x="80" y="192">{pkg, sha256, manifest, apk_path}</text>
+
+    <rect class="box-bg" x="60" y="210" width="240" height="60" rx="8"/>
+    <text class="sub" x="80" y="230" fill="#fbbf24" style="font-size: 11px;">&lt;DEVICE_ROOT&gt;/jobs/apks/&lt;sha&gt;.apk</text>
+    <text class="sub" x="80" y="248">APK payloads referenced by tickets</text>
+    <text class="sub" x="80" y="262">imported as blobs on ingest</text>
+
+    <rect class="box-bg" x="60" y="280" width="240" height="60" rx="8"/>
+    <text class="sub" x="80" y="300" fill="#fbbf24" style="font-size: 11px;">&lt;DEVICE_ROOT&gt;/results/outbox/*.json</text>
+    <text class="sub" x="80" y="318">verdicts pushed BACK to device</text>
+    <text class="sub" x="80" y="332">consumed when device moves on</text>
+
+    <rect class="box-bg" x="60" y="350" width="240" height="60" rx="8"/>
+    <text class="sub" x="80" y="370" fill="#fbbf24" style="font-size: 11px;">&lt;DEVICE_ROOT&gt;/kb/*.json</text>
+    <text class="sub" x="80" y="388">Indicator KB snapshot (§8)</text>
+    <text class="sub" x="80" y="402">offline-readable on device</text>
+
+    <!-- Arrows out of device -->
+    <path d="M 320 170 L 380 170" stroke="#f59e0b" fill="none" marker-end="url(#arrD1)"/>
+    <path d="M 320 240 L 380 240" stroke="#f59e0b" fill="none" marker-end="url(#arrD1)"/>
+    <path d="M 380 310 L 320 310" stroke="#60a5fa" fill="none" marker-end="url(#arrD2)"/>
+    <path d="M 380 380 L 320 380" stroke="#60a5fa" fill="none" marker-end="url(#arrD2)"/>
+
+    <!-- Sync daemon -->
+    <rect class="box-bg surface" x="380" y="140" width="240" height="240" rx="10"/>
+    <text class="title" x="400" y="166">Device-sync daemon</text>
+    <text class="sub" x="400" y="184">scripts/device-sync.ts</text>
+    <text class="sub" x="400" y="200">adb pull / adb push (one-shot</text>
+    <text class="sub" x="400" y="214">or interval-polled)</text>
+    <text class="sub" x="400" y="234">READ:  jobs/inbox/*.json + APKs</text>
+    <text class="sub" x="400" y="250">       (written by FIELD system,</text>
+    <text class="sub" x="400" y="264">        not by darkseed)</text>
+    <text class="sub" x="400" y="284">WRITE: results/outbox/ verdicts</text>
+    <text class="sub" x="400" y="300">WRITE: kb/ snapshot (§8)</text>
+    <text class="sub" x="400" y="324">device_sync table tracks each</text>
+    <text class="sub" x="400" y="338">transfer (idempotent · checksummed)</text>
+
+    <!-- API -->
+    <path d="M 620 240 L 680 240" stroke="#71717a" fill="none" marker-end="url(#arrow)"/>
+
+    <rect class="box-bg accent" x="680" y="140" width="220" height="240" rx="10"/>
+    <text class="title" x="700" y="166">darkseed API</text>
+    <text class="sub" x="700" y="184">apps · jobs · device_sync</text>
+    <text class="sub" x="700" y="200">+ chain CRUD (existing)</text>
+    <text class="sub" x="700" y="224">job lifecycle:</text>
+    <text class="sub" x="700" y="240">  queued</text>
+    <text class="sub" x="700" y="256">  → in_progress (worker claims)</text>
+    <text class="sub" x="700" y="272">  → awaiting_review (chain built)</text>
+    <text class="sub" x="700" y="288">  → verified | flipped</text>
+
+    <path d="M 900 240 L 960 240" stroke="#71717a" fill="none" marker-end="url(#arrow)"/>
+
+    <rect class="box-bg dynamic" x="960" y="140" width="280" height="240" rx="10"/>
+    <text class="title" x="980" y="166">App-worker agent</text>
+    <text class="sub" x="980" y="184">long-running, pulls from queue</text>
+    <text class="sub" x="980" y="200">per job:</text>
+    <text class="sub" x="980" y="220">  static: manifest · perms · YARA</text>
+    <text class="sub" x="980" y="236">  dynamic: install in sandbox</text>
+    <text class="sub" x="980" y="252">           Frida hooks + HAR</text>
+    <text class="sub" x="980" y="268">  match against indicator KB (§8)</text>
+    <text class="sub" x="980" y="284">  build Chain (status='proposed')</text>
+    <text class="sub" x="980" y="300">  attach evidence (multiple kinds)</text>
+    <text class="sub" x="980" y="320">  set verdict = best guess</text>
+    <text class="sub" x="980" y="336">  mark job awaiting_review</text>
+    <text class="sub" x="980" y="356">N workers may run in parallel</text>
+  </svg>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">apps · jobs · device_sync (schema sketch)</h4>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+CREATE TABLE apps (
+  id            TEXT PRIMARY KEY,
+  package_name  TEXT,
+  version_name  TEXT,
+  version_code  INTEGER,
+  apk_sha256    TEXT,
+  apk_blob_sha  TEXT,             -- fk → blobs.sha256
+  arrived_at    TEXT,
+  source_device TEXT
+);
+
+CREATE TABLE jobs (
+  id            TEXT PRIMARY KEY,
+  app_id        TEXT REFERENCES apps(id),
+  ticket_json   TEXT,             -- raw ticket from device
+  status        TEXT,             -- queued | in_progress |
+                                  -- awaiting_review | verified | flipped
+  assigned_worker TEXT,
+  created_at    TEXT,
+  started_at    TEXT,
+  completed_at  TEXT,
+  result_chain_id TEXT REFERENCES chains(id)
+);
+
+CREATE TABLE device_sync (
+  id          INTEGER PRIMARY KEY,
+  device_id   TEXT,
+  direction   TEXT,               -- to_device | from_device
+  entity_kind TEXT,               -- job | result | kb_snapshot
+  entity_id   TEXT,
+  checksum    TEXT,
+  synced_at   TEXT
+);
+</pre>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Filesystem layout on device</h4>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+&lt;DEVICE_ROOT&gt;/
+├── jobs/
+│   ├── inbox/             ← new job tickets land here
+│   │   └── &lt;job-id&gt;.json
+│   └── apks/              ← APK payloads referenced by tickets
+│       └── &lt;sha256&gt;.apk
+├── results/
+│   └── outbox/            ← verdicts written back
+│       └── &lt;job-id&gt;.json
+└── kb/                    ← indicator KB snapshot
+    ├── benign.json
+    └── malicious.json
+</pre>
+      <p style="margin: 8px 0 0; color: var(--muted); font-size: 12px;">
+        Everything on the device is content-addressable + checksummed in <code>device_sync</code>, so the same device can be unplugged from one machine, walked to another, and re-attached without losing state. Paths are placeholders — we'll settle the prefix when we wire it up (USB-MTP mount? <code>adb pull</code>? loopback? not yet decided).
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="indicator-kb">
+  <h2><span class="num">§8</span> Indicator knowledge base (benign + malicious pools)</h2>
+  <p class="lead">
+    Two sided collections of known indicators that <em>bias every agent investigation</em>. Hits don't auto-verdict — they raise confidence and surface as priors in the chain. A package matching the benign pool isn't ignored; it's flagged "<em>known good, double-check before flagging</em>." A domain matching the malicious pool isn't auto-malicious; it's "<em>known bad, this raises the floor</em>."
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 320" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrK1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#22c55e"/></marker>
+      <marker id="arrK2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
+      <marker id="arrK3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+    </defs>
+
+    <!-- Benign pool -->
+    <rect class="box-bg" x="60" y="60" width="280" height="200" rx="10" style="stroke: #22c55e;"/>
+    <text class="title" x="80" y="86" fill="#86efac">benign pool</text>
+    <text class="sub" x="80" y="104">trusted packages (com.android.*, OEM…)</text>
+    <text class="sub" x="80" y="120">internal apps / dev signing certs</text>
+    <text class="sub" x="80" y="136">CDN domains we know are OK</text>
+    <text class="sub" x="80" y="152">known-good ELF hashes</text>
+    <text class="sub" x="80" y="168">analytics SDKs we've cleared</text>
+    <text class="sub" x="80" y="190">use: reduce false-positive volume</text>
+    <text class="sub" x="80" y="206">use: tag "benign-adjacent" findings</text>
+    <text class="sub" x="80" y="228">populated from: bootstrap list +</text>
+    <text class="sub" x="80" y="244">  promoted from reviewer-FP chains</text>
+
+    <!-- Malicious pool -->
+    <rect class="box-bg" x="380" y="60" width="280" height="200" rx="10" style="stroke: #dc2626;"/>
+    <text class="title" x="400" y="86" fill="#fca5a5">malicious pool</text>
+    <text class="sub" x="400" y="104">known bad packages (Joker / FluBot…)</text>
+    <text class="sub" x="400" y="120">C2 domains · sinkholed IPs</text>
+    <text class="sub" x="400" y="136">YARA-rule matched hashes</text>
+    <text class="sub" x="400" y="152">malicious ELFs (loaders, droppers)</text>
+    <text class="sub" x="400" y="168">phishing kit fingerprints (ja3, dom)</text>
+    <text class="sub" x="400" y="190">use: raise confidence on hit</text>
+    <text class="sub" x="400" y="206">use: pre-classify category</text>
+    <text class="sub" x="400" y="228">populated from: bootstrap list +</text>
+    <text class="sub" x="400" y="244">  promoted from verified-TP chains</text>
+
+    <!-- Indicator schema -->
+    <rect class="box-bg" x="690" y="60" width="280" height="200" rx="10"/>
+    <text class="title" x="710" y="86">indicators table</text>
+    <text class="sub" x="710" y="104">id · type · value · polarity</text>
+    <text class="sub" x="710" y="120">  type: package · domain · ip · sha256</text>
+    <text class="sub" x="710" y="136">        md5 · cert · ja3 · elf · url</text>
+    <text class="sub" x="710" y="152">  polarity: benign | malicious</text>
+    <text class="sub" x="710" y="168">category (riskware/toll_fraud/...)</text>
+    <text class="sub" x="710" y="184">confidence (0–1)</text>
+    <text class="sub" x="710" y="200">source (manual · promoted · feed)</text>
+    <text class="sub" x="710" y="216">notes (markdown)</text>
+    <text class="sub" x="710" y="240">UNIQUE(type, value, polarity)</text>
+
+    <!-- Agents consume -->
+    <rect class="box-bg dynamic" x="1010" y="60" width="220" height="200" rx="10"/>
+    <text class="title" x="1030" y="86">agents @ analysis time</text>
+    <text class="sub" x="1030" y="104">per IOC observed → KB lookup</text>
+    <text class="sub" x="1030" y="120">hit raises / lowers confidence</text>
+    <text class="sub" x="1030" y="136">emits a <tspan fill="#fbbf24">kb_match</tspan> evidence</text>
+    <text class="sub" x="1030" y="152">item on the node so the reviewer</text>
+    <text class="sub" x="1030" y="168">sees the prior</text>
+    <text class="sub" x="1030" y="200">also synced to device for offline</text>
+    <text class="sub" x="1030" y="216">analysis in field deployments</text>
+
+    <path d="M 340 160 L 380 160" stroke="#22c55e" fill="none" marker-end="url(#arrK1)"/>
+    <path d="M 660 160 L 690 160" stroke="#dc2626" fill="none" marker-end="url(#arrK2)"/>
+    <path d="M 970 160 L 1010 160" stroke="#71717a" fill="none" marker-end="url(#arrow)"/>
+
+    <!-- Promote loop -->
+    <path class="arrow learn" d="M 1110 260 C 1110 290, 200 290, 200 260" marker-end="url(#arrK3)"/>
+    <text class="sub" x="540" y="284" fill="#a78bfa" style="font-size: 10px;">reviewer-verified IOCs promote back into the pools (manual or rule-based)</text>
+  </svg>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="verdict-feedback">
+  <h2><span class="num">§9</span> Verdict + feedback model</h2>
+  <p class="lead">
+    Up to now darkseed had per-evidence verification but no <em>chain-level verdict</em>. With apps coming in from the device, every chain needs a final call: <strong>malicious · benign · inconclusive · pending</strong>. Feedback widgets sit at three levels and every click writes a label.
+  </p>
+
+  <div class="grid-3">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 8px;">① Chain verdict</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">Top of the right-hand pane. Big, unmistakable.</p>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+verdict: malicious | benign |
+         inconclusive | pending
+verdict_source: agent | reviewer | flipped
+verdict_set_at · set_by_kind/id
+verdict_notes_md (free-form)
+</pre>
+      <div style="margin-top: 8px; font-size: 11px;">
+        <span class="pill done">agree</span> <span class="pill gap">disagree (flip)</span> <span class="pill next">mark inconclusive</span> <span class="pill idea">add note</span>
+      </div>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 8px;">② Per-node feedback</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">In the evidence pane header.</p>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+node_feedback (1:many per node)
+  decision: agree | disagree | edit
+  notes_md
+  by_kind/id · at
+</pre>
+      <div style="margin-top: 8px; font-size: 11px;">
+        <span class="pill done">agree</span> <span class="pill gap">disagree</span> <span class="pill done">edit</span> <span class="pill idea">add note</span>
+      </div>
+      <p style="margin: 8px 0 0; color: var(--muted); font-size: 11px;">
+        Today: review accept/reject for <em>proposed</em> nodes only. Next: agree/disagree on every node (regardless of status) + notes thread.
+      </p>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 8px;">③ Per-evidence feedback</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">On each evidence card.</p>
+<pre class="mono" style="margin: 0; font-size: 11px; color: var(--muted); white-space: pre-wrap;">
+verification_status (existing)
+  pending → confirmed →
+  refuted → inconclusive
++ evidence_feedback
+  decision · notes_md · by · at
+</pre>
+      <div style="margin-top: 8px; font-size: 11px;">
+        <span class="pill done">verify</span> <span class="pill done">accept/reject (proposed)</span> <span class="pill gap">notes thread</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top: 16px;">
+    <h4 style="margin: 0 0 6px; font-size: 13px;">Feedback ↔ labels mapping</h4>
+    <table class="dt">
+      <thead>
+        <tr><th>UI action</th><th>label.signal</th><th>flipped?</th><th>notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>chain verdict: reviewer agrees with agent</td><td><code>approved</code></td><td>no</td><td>standard positive signal</td></tr>
+        <tr><td>chain verdict: reviewer flips agent's call</td><td><code>flipped_tp_to_fp</code> or <code>flipped_fp_to_tp</code></td><td><strong>yes</strong></td><td>high-value training data</td></tr>
+        <tr><td>chain verdict: reviewer marks inconclusive</td><td><code>inconclusive</code></td><td>—</td><td>noise; surfaces missing evidence</td></tr>
+        <tr><td>node: reviewer disagrees</td><td><code>rejected</code></td><td>—</td><td>node may stay (with refuted status) for context</td></tr>
+        <tr><td>node: reviewer edits</td><td><code>edited</code></td><td>—</td><td>stores before/after diff</td></tr>
+        <tr><td>evidence: reviewer rejects</td><td><code>rejected</code></td><td>—</td><td>removes from severity calc</td></tr>
+        <tr><td>evidence: verification confirmed</td><td><code>verified</code></td><td>—</td><td>raises whole-chain confidence</td></tr>
+        <tr><td>evidence: verification refuted</td><td><code>refuted</code></td><td>—</td><td>lowers confidence; may force re-verdict</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="capabilities">
+  <h2><span class="num">§10</span> Capabilities matrix</h2>
+  <p class="lead">Today vs near-term vs ideas. Use this as a checklist when planning sprints.</p>
+  <table class="dt">
+    <thead>
+      <tr><th>Capability</th><th>Today</th><th>Notes / gap</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>browse 1000 chains</td><td><span class="pill done">done</span></td><td>list / graph / evidence panes</td></tr>
+      <tr><td>filter (category/severity/source/family/text)</td><td><span class="pill done">done</span></td><td>client-side; move to FTS5 query as corpus grows</td></tr>
+      <tr><td>create / edit / delete nodes</td><td><span class="pill done">done</span></td><td>inline editor + MITRE technique autocomplete</td></tr>
+      <tr><td>create / delete edges</td><td><span class="pill done">done</span></td><td>edge modal; <em>drag-to-connect on graph</em> still pending</td></tr>
+      <tr><td>create chain from scratch</td><td><span class="pill done">done</span></td><td>seed-IOC modal</td></tr>
+      <tr><td>upload evidence (binary)</td><td><span class="pill done">done</span></td><td>multipart, kind auto-detection, content-addressed storage</td></tr>
+      <tr><td>inline-text evidence</td><td><span class="pill done">done</span></td><td>same modal, "inline text" tab</td></tr>
+      <tr><td>Frida trace viewer</td><td><span class="pill done">done</span></td><td>event timeline; <em>flame view + arg inspector</em> next</td></tr>
+      <tr><td>HAR waterfall viewer</td><td><span class="pill done">done</span></td><td>status-colored rows; <em>request/response body diff</em> next</td></tr>
+      <tr><td>PCAP viewer</td><td><span class="pill next">partial</span></td><td>blob stored + download; <strong>need server-side tshark for inline flow parse</strong></td></tr>
+      <tr><td>source artifact viewer</td><td><span class="pill done">done</span></td><td><em>Monaco / Shiki syntax highlighting</em> coming</td></tr>
+      <tr><td>UI capture (screenshot)</td><td><span class="pill done">done</span></td><td>inline image render</td></tr>
+      <tr><td>per-evidence verification</td><td><span class="pill done">done</span></td><td>4-state badge (pending/confirmed/refuted/inconclusive)</td></tr>
+      <tr><td>proposal queue (agents → reviewer)</td><td><span class="pill done">done</span></td><td>queue modal with accept/reject</td></tr>
+      <tr><td>comments per node</td><td><span class="pill done">done</span></td><td>markdown, threaded, agent vs user provenance</td></tr>
+      <tr><td>audit log surfaced</td><td><span class="pill done">done</span></td><td>per-node audit tab</td></tr>
+      <tr><td>TF-IDF cross-chain similarity</td><td><span class="pill done">done</span></td><td>"similar" tab; ranked top-N</td></tr>
+      <tr><td>STIX 2.1 export</td><td><span class="pill done">done</span></td><td>identity + attack-pattern + indicator + relationships</td></tr>
+      <tr><td>JSONL bulk export</td><td><span class="pill done">done</span></td><td>chains and labels both</td></tr>
+      <tr><td>vector embeddings</td><td><span class="pill next">planned</span></td><td>sqlite-vec + MiniLM via transformers.js; augments TF-IDF</td></tr>
+      <tr><td>drag-to-connect on graph</td><td><span class="pill next">planned</span></td><td>React Flow connection mode (modal works today)</td></tr>
+      <tr><td>multi-user auth + RBAC</td><td><span class="pill next">planned</span></td><td>currently single-user local; add OIDC + roles for shared install</td></tr>
+      <tr><td>agent SDK (Python + TS)</td><td><span class="pill next">planned</span></td><td>thin wrapper for proposals + similarity context</td></tr>
+      <tr><td>MISP export</td><td><span class="pill next">planned</span></td><td>same shape work as STIX</td></tr>
+      <tr><td>webhooks on verified-finding</td><td><span class="pill idea">idea</span></td><td>SOAR integration</td></tr>
+      <tr><td>chain diff / version history view</td><td><span class="pill idea">idea</span></td><td>audit_log has the data; needs a viewer</td></tr>
+      <tr><td>"explain this chain" LLM judge</td><td><span class="pill idea">idea</span></td><td>llm_judgment evidence kind + per-chain narrative</td></tr>
+      <tr><td>active learning loop (auto-prioritize uncertainty)</td><td><span class="pill idea">idea</span></td><td>queue ranks by agent-confidence × novelty</td></tr>
+      <tr><td>shared workspaces / projects</td><td><span class="pill idea">idea</span></td><td>scope chains to a team / investigation</td></tr>
+
+      <tr><td colspan="3" style="background: var(--panel-2); color: var(--accent); font-family: ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;">— reports / device / KB / verdict (§6–§9) —</td></tr>
+
+      <tr><td>.md report inbox + watcher</td><td><span class="pill next">planned</span></td><td>chokidar on <code>data/reports/inbox/</code>; YAML frontmatter for declared category + tp/fp</td></tr>
+      <tr><td>report-ingester agent</td><td><span class="pill next">planned</span></td><td>parses .md → proposed chain; KB priors used as context</td></tr>
+      <tr><td>flipped-verdict tracking</td><td><span class="pill next">planned</span></td><td><code>declared_label</code> vs <code>effective_label</code>; flipped = high-signal label</td></tr>
+      <tr><td>device-sync daemon</td><td><span class="pill next">planned</span></td><td>poll <code>&lt;DEVICE_ROOT&gt;</code>, idempotent via <code>device_sync</code> table</td></tr>
+      <tr><td>apps + jobs queue</td><td><span class="pill next">planned</span></td><td>job lifecycle: queued → in_progress → awaiting_review → verified | flipped</td></tr>
+      <tr><td>app-worker agent (static + dynamic)</td><td><span class="pill next">planned</span></td><td>claims a job, builds proposed chain with attached evidence</td></tr>
+      <tr><td>jobs queue dashboard surface</td><td><span class="pill next">planned</span></td><td>list view, filters by status / worker / age / verdict</td></tr>
+      <tr><td>indicator KB (benign + malicious)</td><td><span class="pill next">planned</span></td><td>typed indicators, polarity, confidence, agent-consumable</td></tr>
+      <tr><td>kb_match evidence kind</td><td><span class="pill next">planned</span></td><td>auto-attached when an IOC matches the KB during analysis</td></tr>
+      <tr><td>KB → device snapshot</td><td><span class="pill next">planned</span></td><td>JSON dump of indicators to <code>&lt;DEVICE_ROOT&gt;/kb/</code></td></tr>
+      <tr><td>device-portable state</td><td><span class="pill next">planned</span></td><td>same Pixel can move between machines; <code>device_sync</code> survives reconnect</td></tr>
+      <tr><td>verdict per chain</td><td><span class="pill next">planned</span></td><td>columns on <code>chains</code>: verdict, verdict_source, set_by, notes_md</td></tr>
+      <tr><td>chain-level feedback widget</td><td><span class="pill next">planned</span></td><td>big agree / disagree (flip) / inconclusive + notes</td></tr>
+      <tr><td>per-node feedback (any status)</td><td><span class="pill next">planned</span></td><td>extends beyond just proposed nodes — agree/disagree/edit + notes</td></tr>
+      <tr><td>per-evidence notes thread</td><td><span class="pill next">planned</span></td><td>per-card comments, layered on existing verification status</td></tr>
+      <tr><td>flip-review dashboard lane</td><td><span class="pill next">planned</span></td><td>dedicated UI for reports / chains where reviewer disagreed with declared label</td></tr>
+      <tr><td>promote IOCs from verified chains → KB</td><td><span class="pill idea">idea</span></td><td>one-click "add to benign / malicious pool"</td></tr>
+      <tr><td>auto-redact victim data in evidence blobs</td><td><span class="pill idea">idea</span></td><td>before push-back to device or external export</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="tradeoffs">
+  <h2><span class="num">§11</span> Key design trade-offs</h2>
+  <div class="grid-2">
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">SQLite, not Postgres</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Single-file, zero-ops, FTS5 + vec extensions, fast for 100k chains. Trade-off: no concurrent writers beyond ~one process; we'll have to migrate if we ever need multi-instance writes (or front it with a write-coordinator).
+      </p>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Content-addressed blobs on disk, not in SQLite</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Deduplication is free (same APK uploaded twice = one file). SQLite stays small. Trade-off: backup story is "copy <code>data/</code> entire" — not "dump one db file."
+      </p>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Discriminated-union evidence schema</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Each evidence kind has its own zod payload + own React viewer. Adding a new kind is two files; no migration. Trade-off: 20+ tiny viewer functions to maintain — but each is &lt;50 lines and rarely changes.
+      </p>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">TF-IDF before neural embeddings</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Zero deps, pure SQL, instant warm-up. Good baseline retrieval for surface vocabulary (IOC + technique). Trade-off: misses semantic-only matches (e.g., "SMS hijack" ↔ "intercept OTP"). Vector store closes that gap once we add it.
+      </p>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Proposals are first-class (status enum), not a separate queue table</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        A proposed node lives in <code>chain_nodes</code> with <code>status='proposed'</code>. So the graph can render proposals inline (with the ⚑ badge) and the reviewer can see context. Trade-off: every query needs a status filter — easy to forget. Mitigated by always-default-filtering in the repo layer.
+      </p>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Agents and humans use the same API</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Only difference: <code>x-actor-kind</code> header. No special agent endpoints, no special data shape. Trade-off: no "agent superpowers" — both are equally constrained by validation/auth. That's a feature.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="roadmap">
+  <h2><span class="num">§12</span> Roadmap</h2>
+  <div class="grid-3">
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Next 1 week — polish &amp; rough edges</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>drag-to-connect on the graph</li>
+        <li>Monaco/Shiki syntax highlighting for source_artifact</li>
+        <li>HAR request/response body diff</li>
+        <li>chain summary regeneration after edits</li>
+        <li>responsive layout for &lt;1200px laptops</li>
+        <li>keyboard nav across graph nodes</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Next 1 month — agent SDK + embeddings</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li><code>@darkseed/agent-sdk</code> (TS) + Python equiv</li>
+        <li>sqlite-vec + MiniLM-L6 embeddings on write</li>
+        <li>semantic similar-tab (replaces or augments TF-IDF)</li>
+        <li>per-agent auth keys (move beyond header trust)</li>
+        <li>chain-diff viewer over <code>audit_log</code></li>
+        <li>PCAP server-side parse via tshark sidecar</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h4 style="margin: 0 0 6px;">Next quarter — multi-tenant + integrations</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>OIDC auth + workspaces / projects</li>
+        <li>MISP export · webhooks on verified-finding</li>
+        <li>llm_judgment evidence kind + per-chain narrative</li>
+        <li>active-learning queue ranking (uncertainty + novelty)</li>
+        <li>eval harness: replay labels.jsonl against new agent versions, score recall@k</li>
+        <li>shared corpus federation between instances</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="planning-slots">
+  <h2><span class="num">§13</span> Open planning slots</h2>
+  <p class="lead">Decisions to make next — fill in as you go.</p>
+  <div class="grid-2">
+    <div class="slot">
+      <h4>Agent SDK shape</h4>
+      <ul>
+        <li>language(s): TS first? Python first? Both?</li>
+        <li>auth: header trust → API keys → mTLS?</li>
+        <li>streaming: long-poll on /queue vs SSE vs MQTT vs none?</li>
+        <li>retry semantics + idempotency keys on POST proposal</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Embedding model + index</h4>
+      <ul>
+        <li>MiniLM-L6 (90 MB, runs in transformers.js) vs bge-small</li>
+        <li>sqlite-vec vs sqlite-vss — which is stabler today?</li>
+        <li>re-embed cadence: on every write vs nightly batch</li>
+        <li>what does the "similar" tab actually rank — node embedding, chain embedding, or both?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Multi-tenant model</h4>
+      <ul>
+        <li>workspace as top-level entity vs per-chain ACL</li>
+        <li>auth: Auth.js + OIDC, or just basic + reverse proxy?</li>
+        <li>can agents act across workspaces?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Eval / harness</h4>
+      <ul>
+        <li>what's "correct" — recall@k against held-out labels?</li>
+        <li>how do we A/B agent versions in production without confusing reviewers?</li>
+        <li>shadow-mode (write proposals to a hidden bucket, never surface) for safe rollouts</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>External integrations</h4>
+      <ul>
+        <li>MISP push: per-chain or per-verified-IOC?</li>
+        <li>SOAR webhook contract — what schema do they expect?</li>
+        <li>do we ingest from Crowdstrike / Sentinel telemetry too?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Privacy / safety</h4>
+      <ul>
+        <li>handling of real victim data inside captured HAR / pcap</li>
+        <li>redaction agent as a write-side hook?</li>
+        <li>per-chain TLP marking + export filtering</li>
+      </ul>
+    </div>
+
+    <div class="slot" style="border-style: solid; border-color: #14532d;">
+      <h4 style="color: #86efac;">✓ Report ingestion (§6) — decided</h4>
+      <ul>
+        <li>locked YAML frontmatter (id, category, declared_label, source, first_seen, tags)</li>
+        <li>one report per investigation of an APK; N reports per APK; N APKs per artifact_id</li>
+        <li>idempotent re-ingest on .md edit (content_hash)</li>
+      </ul>
+    </div>
+    <div class="slot" style="border-style: solid; border-color: #14532d;">
+      <h4 style="color: #86efac;">✓ Device broker (§7) — decided</h4>
+      <ul>
+        <li>adb pull / push over USB-C</li>
+        <li>field system on a separate machine writes <code>jobs/inbox/</code>; darkseed owns <code>results/outbox/</code> + <code>kb/</code></li>
+        <li>one machine ↔ one device at a time (no concurrent sharing)</li>
+        <li><em>still open:</em> exact ticket JSON schema (will use the proposed shape as v0)</li>
+      </ul>
+    </div>
+    <div class="slot" style="border-style: solid; border-color: #14532d;">
+      <h4 style="color: #86efac;">✓ Indicator KB (§8) — decided</h4>
+      <ul>
+        <li>seeded from internal allow/deny list (you provide JSON at <code>data/kb-seed/{benign,malicious}.json</code>)</li>
+        <li>promotion is <strong>manual click only</strong> from verified chains (no auto-rules in v1)</li>
+        <li><em>still open:</em> polarity transitions audit, device-side KB filtering (deferrable)</li>
+      </ul>
+    </div>
+    <div class="slot" style="border-style: solid; border-color: #14532d;">
+      <h4 style="color: #86efac;">✓ Verdict + feedback (§9) — decided</h4>
+      <ul>
+        <li>app-worker sets a best-guess verdict on every chain it produces</li>
+        <li><code>severity_score</code> (0–100) and <code>verdict</code> (malicious/benign/inconclusive/pending) are independent fields</li>
+        <li><em>v1 default:</em> first reviewer verdict closes the job (quorum can be added later)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="bottom">
+  <span>darkseed · architecture v0.2 · /Users/danielbaruch/darkseed/docs/architecture.html</span>
+  <span>generated 2026-05-23 · re-render after structural changes</span>
+</footer>
+
+</div>
+</body>
+</html>
