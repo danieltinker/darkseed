@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System A ↔ System B — joint architecture (darkseed × jetski)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --panel: #18181b;
+    --panel-2: #0f0f10;
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --text: #e4e4e7;
+    --muted: #a1a1aa;
+    --dim: #71717a;
+    --faint: #52525b;
+    --accent: #f59e0b;
+    --accent-2: #fbbf24;
+    --a-tone: #34d399;   /* Agent A — emerald (static / Mac side) */
+    --b-tone: #60a5fa;   /* Agent B — sky (dynamic / Kali side) */
+    --ds-tone: #a78bfa;  /* darkseed — violet */
+    --dev-tone: #f59e0b; /* device / handoff — amber */
+    --ok: #22c55e;
+    --warn: #f97316;
+    --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 14px/1.5 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, kbd, .mono, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace; font-size: 0.92em; }
+  a { color: var(--accent-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+  pre {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 12px; overflow-x: auto; font-size: 11.5px; color: var(--text);
+    margin: 8px 0;
+  }
+  blockquote {
+    margin: 10px 0; padding: 8px 12px; border-left: 3px solid var(--accent);
+    background: rgba(245, 158, 11, 0.06); color: var(--muted); border-radius: 0 4px 4px 0;
+  }
+
+  .page { max-width: 1360px; margin: 0 auto; padding: 40px 28px 80px; }
+  header.top {
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 22px;
+  }
+  header.top .brand { font-family: ui-monospace, monospace; color: var(--accent); font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  header.top .tag { color: var(--muted); font-size: 13px; }
+  header.top .meta { margin-left: auto; color: var(--dim); font-size: 12px; font-family: ui-monospace, monospace; }
+
+  nav.toc {
+    display: flex; flex-wrap: wrap; gap: 8px 14px;
+    padding: 10px 12px;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 36px; font-size: 12px;
+  }
+  nav.toc a { color: var(--muted); font-family: ui-monospace, monospace; }
+  nav.toc a::before { content: "› "; color: var(--faint); }
+
+  section { margin: 44px 0; scroll-margin-top: 24px; }
+  section > h2 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 4px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  section > h2 .num { color: var(--dim); font-family: ui-monospace, monospace; font-weight: 400; }
+  section > .lead { color: var(--muted); margin: 0 0 18px; font-size: 14px; max-width: 1000px; }
+  section h3 { font-size: 14px; color: var(--text); margin: 20px 0 6px; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px;
+  }
+  .panel.compact { padding: 12px; }
+  .panel.a-side  { border-left: 3px solid var(--a-tone); }
+  .panel.b-side  { border-left: 3px solid var(--b-tone); }
+  .panel.ds-side { border-left: 3px solid var(--ds-tone); }
+  .panel.dev     { border-left: 3px solid var(--dev-tone); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 1080px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  table.dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.dt th, table.dt td {
+    padding: 8px 10px; text-align: left; vertical-align: top;
+    border-bottom: 1px solid var(--border);
+  }
+  table.dt th {
+    font-weight: 500; color: var(--muted); font-family: ui-monospace, monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    background: var(--panel-2);
+  }
+  table.dt code { color: var(--accent-2); }
+  table.dt tr:last-child td { border-bottom: 0; }
+  table.dt tbody tr:hover { background: rgba(255,255,255,0.015); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: ui-monospace, monospace; font-size: 10px;
+    padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border);
+    background: var(--panel-2); color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .pill.a  { color: var(--a-tone); border-color: #14532d; background: rgba(20, 83, 45, 0.18); }
+  .pill.b  { color: var(--b-tone); border-color: #1e3a8a; background: rgba(30, 58, 138, 0.18); }
+  .pill.ds { color: var(--ds-tone); border-color: #4c1d95; background: rgba(76, 29, 149, 0.18); }
+  .pill.dev{ color: var(--dev-tone); border-color: #78350f; background: rgba(120, 53, 15, 0.18); }
+  .pill.done { color: #86efac; border-color: #14532d; background: rgba(20, 83, 45, 0.18); }
+  .pill.next { color: #fcd34d; border-color: #78350f; background: rgba(120, 53, 15, 0.18); }
+  .pill.idea { color: #93c5fd; border-color: #1e3a8a; background: rgba(30, 58, 138, 0.18); }
+  .pill.gap  { color: #fca5a5; border-color: #7f1d1d; background: rgba(127, 29, 29, 0.18); }
+  .pill.new  { color: var(--accent-2); border-color: #78350f; background: rgba(120, 53, 15, 0.18); }
+
+  .diagram { width: 100%; height: auto; display: block; }
+  .diagram .box-bg { fill: var(--panel-2); stroke: var(--border-strong); stroke-width: 1.2; }
+  .diagram .box-bg.a  { stroke: var(--a-tone); }
+  .diagram .box-bg.b  { stroke: var(--b-tone); }
+  .diagram .box-bg.ds { stroke: var(--ds-tone); }
+  .diagram .box-bg.dev{ stroke: var(--dev-tone); }
+  .diagram .box-bg.acc{ stroke: var(--accent); }
+  .diagram text { fill: var(--text); font-family: ui-monospace, monospace; font-size: 11px; }
+  .diagram text.title { font-size: 12px; font-weight: 600; fill: var(--text); }
+  .diagram text.sub { fill: var(--dim); font-size: 9.5px; }
+  .diagram text.lane { fill: var(--faint); font-size: 10px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; }
+  .diagram .arrow { stroke: var(--faint); stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
+  .diagram .arrow.a   { stroke: var(--a-tone); }
+  .diagram .arrow.b   { stroke: var(--b-tone); }
+  .diagram .arrow.ds  { stroke: var(--ds-tone); }
+  .diagram .arrow.dev { stroke: var(--dev-tone); }
+  .diagram .arrow.dashed { stroke-dasharray: 4 3; }
+
+  .kvs { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12px; }
+  .kvs .k { color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kvs .v { color: var(--text); }
+  .kvs .v code { color: var(--accent-2); }
+
+  .legend { display: inline-flex; flex-wrap: wrap; gap: 12px; padding: 6px 8px; font-size: 11px; color: var(--muted); }
+  .legend .li { display: inline-flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; }
+  .legend .sw { width: 18px; height: 6px; border-radius: 2px; display: inline-block; }
+
+  .slot {
+    border: 1px dashed var(--border-strong); border-radius: 8px;
+    padding: 14px; background: var(--panel-2);
+    color: var(--muted); font-size: 12px;
+  }
+  .slot h4 { margin: 0 0 6px; font-size: 13px; color: var(--text); }
+  .slot ul { margin: 4px 0 0 18px; padding: 0; }
+  .slot li { margin: 2px 0; }
+
+  footer.bottom {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+    color: var(--dim); font-size: 11px; font-family: ui-monospace, monospace;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="top">
+  <span class="brand">darkseed × jetski</span>
+  <span class="tag">System A ↔ System B — joint architecture</span>
+  <span class="meta">drafted 2026-05-23 · supersedes the agent-side blueprint v2 in jetski-sync repo</span>
+</header>
+
+<nav class="toc">
+  <a href="#what">what this is</a>
+  <a href="#decisions">resolved decisions</a>
+  <a href="#topology">topology</a>
+  <a href="#lifecycle">report lifecycle</a>
+  <a href="#device">device handoff</a>
+  <a href="#contracts">contracts A→B + B→A</a>
+  <a href="#joint-report">joint report (inbox)</a>
+  <a href="#schema">darkseed schema additions</a>
+  <a href="#evidence-kinds">evidence kinds</a>
+  <a href="#indicator-types">indicator types + KB</a>
+  <a href="#hook-synth">hook synth loop</a>
+  <a href="#scoring">score recompute</a>
+  <a href="#verdict">verdict mirror</a>
+  <a href="#a-dashboard">Agent A dashboard</a>
+  <a href="#b-subagents">Agent B sub-agents</a>
+  <a href="#workflows">workflows table</a>
+  <a href="#roadmap">roadmap</a>
+  <a href="#open">open items</a>
+</nav>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="what">
+  <h2><span class="num">§0</span> What this doc is</h2>
+  <div class="panel">
+    <p style="margin: 0 0 10px; font-size: 14px;">
+      The <strong>joint architecture</strong> that binds the existing two-agent malware-analysis system (described in <a href="https://github.com/danielb-arch/jetski-sync">jetski-sync</a>) with <strong>darkseed</strong> (the persistent brain DB at this repo). It supersedes nothing inside either system internally — it specifies the contracts where they meet.
+    </p>
+    <p style="margin: 0; font-size: 14px;">
+      Two agents, two host machines, one physical device shared by both, one persistent brain on the Agent B side. Reports stay <em>incomplete</em> through scoring → static → dynamic, then the operator marks them complete after reviewing assembled evidence.
+    </p>
+  </div>
+
+  <div class="grid-3" style="margin-top: 16px;">
+    <div class="panel a-side compact">
+      <div class="kvs">
+        <span class="k"><span class="pill a">System A</span></span><span class="v">macOS — Agent A (static) + daily-driver dashboard</span>
+        <span class="k">does</span><span class="v">queue intake, scoring, install, slice (JADX + Ghidra + native), rubric hunt, playbook + hooks + decryptors, joint-report assembly from B's output</span>
+        <span class="k">surfaces</span><span class="v">reports list (state + verdict pills), minimal proof viewer per app</span>
+      </div>
+    </div>
+    <div class="panel b-side compact">
+      <div class="kvs">
+        <span class="k"><span class="pill b">System B</span></span><span class="v">Windows 11 (Claude orchestrator) → SSH → Kali VM</span>
+        <span class="k">does</span><span class="v">dynamic execution via Frida + multi-VPN baseline + HTTP Toolkit (opt) + hook synthesis when A is silent</span>
+        <span class="k">surfaces</span><span class="v">via darkseed (Flask ops view absorbed into darkseed)</span>
+      </div>
+    </div>
+    <div class="panel ds-side compact">
+      <div class="kvs">
+        <span class="k"><span class="pill ds">darkseed</span></span><span class="v">on Kali, same host as Agent B</span>
+        <span class="k">role</span><span class="v">persistent brain — chains, evidence, KB, similarity, audit, labels export. Receives joint markdown reports from the publisher.</span>
+        <span class="k">phase</span><span class="v">archive-only for PoC; agent priors deferred to v2</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="decisions">
+  <h2><span class="num">§1</span> Resolved decisions (this thread)</h2>
+  <p class="lead">Every architectural decision settled in the four interview rounds. Anything not here defaults to the proposal in the jetski-sync docs.</p>
+  <table class="dt">
+    <thead>
+      <tr><th>#</th><th>Decision</th><th>Resolution</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>TOPO-1</td><td>Single host vs dual-host vs three-tier</td><td><strong>Dual-host (blueprint v2 as written)</strong> — macOS for A, Windows orchestrating Kali for B, real cable handoff between them</td></tr>
+      <tr><td>TOPO-2</td><td>darkseed host placement</td><td>On Kali, same host as Agent B; local file IO is the primary transport from publisher to inbox</td></tr>
+      <tr><td>INTAKE</td><td>Job source(s)</td><td>(1) automated DARBEK scrape produces incomplete scoring-card report → (2) operator manually clicks <em>slice</em> → (3) operator manually clicks <em>run hunt</em> → (4) device cable moves to Kali for dynamic → (5) cable back, evidence assembled, operator verdict closes report</td></tr>
+      <tr><td>LOOP</td><td>Reviewer feedback path</td><td>Full closed loop: labels written for every decision; verdict mirrors A→darkseed; agent priors deferred to v2 (darkseed is <em>archive-only</em> for PoC)</td></tr>
+      <tr><td>DASH-A</td><td>Hunt-evidence dashboard location</td><td>darkseed (full brain) — Agent A's dashboard stays minimal proof viewer with operator's daily-driver tabs. Evidence flows back through device with HTTP-API fallback.</td></tr>
+      <tr><td>DASH-B</td><td>Agent B's Flask :5051</td><td>Absorbed into darkseed (devices online, current job, frida live logs become darkseed surfaces)</td></tr>
+      <tr><td>VERDICT</td><td>Verdict authority</td><td>Set on Agent A's dashboard; POSTed to darkseed so chain verdict + labels stay synced</td></tr>
+      <tr><td>STATES</td><td>Report state machine</td><td>Strict gated transitions (see §3). Operator can't mark <em>verified</em> without dynamic evidence.</td></tr>
+      <tr><td>DECIDE-4</td><td>One node per Logical Phase vs per rubric</td><td>One chain_node per Logical Phase. Ingester learns the <code>## N. Logical Phase N: &lt;name&gt;</code> header.</td></tr>
+      <tr><td>DECIDE-A1</td><td>Hook synthesis policy</td><td>Full autonomy + full transparency: synthesized hook is written back to device alongside A's hook; new IOCs round-trip into A's rubric on next cycle.</td></tr>
+      <tr><td>DECIDE-12</td><td>IndicatorType additions</td><td>Add <strong>library, class, method, shared_pref_file, native_symbol</strong> (full set)</td></tr>
+      <tr><td>DECIDE-14</td><td>Workflows table</td><td>Auto-promote on first confirmed dynamic run + manual curate in darkseed workflows panel</td></tr>
+      <tr><td>DECIDE-A4</td><td>Score recompute</td><td><strong>Recompute as verified_score</strong>. static_score (A's estimate) immutable. dynamic verifications adjust verified_score. Joint report shows both + delta.</td></tr>
+      <tr><td>DECIDE-2</td><td>Inbox markdown body sections</td><td>Full structured: <code>## Static-Analysis Self-Sufficient</code> → <code>## Static Evidence</code> (per-rubric, per-phase) → <code>## Dynamic Evidence</code> (per-VPN + Evasion Delta) → <code>## IOCs</code> (line-formatted with tags) → <code>## Artifacts on disk</code></td></tr>
+      <tr><td>DECIDE-5</td><td>Decompiled source transport</td><td>Tarball (gzipped). One sha-addressable blob. Agent B un-tars to scratch on Kali.</td></tr>
+      <tr><td>DECIDE-1</td><td>IOC VPN tagging</td><td><code>&lt;type&gt; &lt;value&gt;  [vpn=&lt;exit&gt;] [rubric=&lt;RID&gt;]</code> per line in the IOCs section</td></tr>
+      <tr><td>DECIDE-3</td><td>Rubric → MITRE mapping</td><td>Accept Agent B's proposed table — see §6.3</td></tr>
+      <tr><td>DECIDE-6</td><td>trigger_mock evidence kind</td><td>NEW static kind. Blob: JSON file. Payload: <code>{rubric_id, success_count}</code></td></tr>
+      <tr><td>DECIDE-7</td><td>decryptor_artifact evidence kind</td><td>NEW static kind. Blob: .py file. Payload: <code>{algorithm, success_count, last_used_at}</code></td></tr>
+      <tr><td>DECIDE-8</td><td>Frida output format</td><td>Hook emits pure NDJSON via <code>send()</code>. Publisher pipes ndjson directly into FridaTracePayload.</td></tr>
+      <tr><td>DECIDE-9</td><td>Logcat evidence kind</td><td>NEW dynamic kind: <code>logcat_capture</code> (don't overload process_spawn)</td></tr>
+      <tr><td>DECIDE-10</td><td>install_source enum</td><td><code>pre_existing | staged_apk | xapk_bundle | unknown</code></td></tr>
+      <tr><td>DECIDE-11</td><td>Transport A↔B↔darkseed</td><td>Device-cable + local FS IO is canonical; HTTP API between machines is opt-in fallback. PoC uses device only.</td></tr>
+      <tr><td>DECIDE-13</td><td>Static-self-sufficient flag</td><td>BOTH stored: <code>static_self_sufficient_a</code> (A's confidence) + <code>static_self_sufficient_b</code> (B's review of A's output). Joint report shows both.</td></tr>
+      <tr><td>DECIDE-A2</td><td>Push-notification-to-WebView exclusion</td><td>Ship as proposed: <code>tap-required: true</code> flag in rubric; universal hook captures <code>Intent.setData</code>; URL fires w/o preceding setData → scored.</td></tr>
+      <tr><td>DECIDE-A3</td><td>Ad-SDK list canonical source</td><td><code>darkseed/data/kb-seed/benign.json</code> with <code>category: "sdk"</code>. Single source of truth, both agents pull fresh.</td></tr>
+      <tr><td>DECIDE-A5</td><td>Framework-specific hook coverage</td><td>B documents Flutter/Unity/RN limitations in <code>dynamic_results.notes</code> when slicer flagged those frameworks. Reported as "behavior not observed in framework X" — not as <code>failed</code>.</td></tr>
+      <tr><td>EXT-1</td><td>manifest_summary.json co-staged with playbook</td><td>Accepted (see §5.5 schema)</td></tr>
+      <tr><td>EXT-2</td><td>expected_indicators YAML in rubric MD</td><td>Accepted (see §6.5)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="topology">
+  <h2><span class="num">§2</span> Physical topology</h2>
+  <p class="lead">Two host machines + one shared rooted device. A human moves the cable between them.</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 560" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52525b"/></marker>
+      <marker id="arrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#34d399"/></marker>
+      <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#60a5fa"/></marker>
+      <marker id="arrowD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+    </defs>
+
+    <!-- MACHINE A -->
+    <rect class="box-bg a" x="40" y="40" width="380" height="430" rx="14"/>
+    <text class="lane" x="60" y="64">machine A · macOS</text>
+    <text class="title" x="60" y="92">Agent A (Claude session + tools)</text>
+    <text class="sub" x="60" y="108">- DARBEK queue scraper (non-agentic)</text>
+    <text class="sub" x="60" y="122">- JADX + Ghidra + native + framework decompile</text>
+    <text class="sub" x="60" y="136">- Rubric hunter (S1-S11, M1-M8)</text>
+    <text class="sub" x="60" y="150">- Playbook + hook + mock + decryptor synth</text>
+    <text class="sub" x="60" y="164">- Joint-report renderer (consumes B's results)</text>
+
+    <rect class="box-bg" x="60" y="190" width="340" height="130" rx="8"/>
+    <text class="title" x="80" y="214">Agent A dashboard (operator daily-driver)</text>
+    <text class="sub" x="80" y="232">tab: Lock Queue (DARBEK)</text>
+    <text class="sub" x="80" y="248">tab: Reports — state + verdict pills</text>
+    <text class="sub" x="80" y="264">tab: Install + Slice (manual per app)</text>
+    <text class="sub" x="80" y="280">tab: Hunt (manual, status, progress)</text>
+    <text class="sub" x="80" y="296">tab: Proofs — minimal evidence viewer</text>
+    <text class="sub" x="80" y="312">tab: Verdict (mirrors to darkseed)</text>
+
+    <rect class="box-bg" x="60" y="340" width="340" height="60" rx="8"/>
+    <text class="title" x="80" y="362">Mac local ADB</text>
+    <text class="sub" x="80" y="380">owns the device WHEN cable is plugged here</text>
+
+    <text class="sub" x="60" y="430" fill="#34d399">A_complete / A_ack / A_error written by Mac ADB</text>
+
+    <!-- DEVICE -->
+    <rect class="box-bg dev" x="475" y="170" width="220" height="200" rx="14"/>
+    <text class="lane" x="495" y="194">device (broker)</text>
+    <text class="title" x="495" y="222">Pixel 7 27251FDH2000SS</text>
+    <text class="sub" x="495" y="240">rooted · frida-server (root)</text>
+    <text class="sub" x="495" y="256">HTTP Toolkit Android (opt)</text>
+    <text class="sub" x="495" y="280" fill="#fbbf24">/data/local/tmp/riskware_handoff/</text>
+    <text class="sub" x="495" y="294" fill="#fbbf24">  &lt;job_id&gt;/</text>
+    <text class="sub" x="495" y="308">state sentinels A_* / B_*</text>
+    <text class="sub" x="495" y="322">playbook + hooks + tarball</text>
+    <text class="sub" x="495" y="336">dynamic_results + joint_report</text>
+
+    <text class="sub" x="495" y="358" fill="#f59e0b">⇄ HUMAN moves cable (no KVM)</text>
+
+    <!-- MACHINE B -->
+    <rect class="box-bg b" x="740" y="40" width="500" height="490" rx="14"/>
+    <text class="lane" x="760" y="64">machine B · Windows 11 + Kali VM</text>
+
+    <text class="title" x="760" y="92">Windows orchestrator</text>
+    <text class="sub" x="760" y="108">- Claude session (Agent B)</text>
+    <text class="sub" x="760" y="122">- SSH to Kali for every device action</text>
+    <text class="sub" x="760" y="136">- no local ADB</text>
+
+    <rect class="box-bg" x="760" y="160" width="460" height="170" rx="8"/>
+    <text class="title" x="780" y="184">Kali VM 192.168.50.128</text>
+    <text class="sub" x="780" y="202">ADB · Frida 16.6.6 · JADX · NordVPN CLI</text>
+    <text class="sub" x="780" y="216">HTTP Toolkit server (opt)</text>
+    <text class="sub" x="780" y="234">sub-agents: dyn-device-health · dyn-playbook-scout</text>
+    <text class="sub" x="780" y="248">  dyn-frida-spawn · dyn-vpn-control · dyn-evasion-analyzer</text>
+    <text class="sub" x="780" y="262">  dyn-hook-synth · <tspan fill="#fbbf24">dyn-publisher (new)</tspan></text>
+    <text class="sub" x="780" y="284">Frida output: pure NDJSON via send()</text>
+    <text class="sub" x="780" y="298">multi-VPN baseline: Brazil / US / Ukraine</text>
+    <text class="sub" x="780" y="312">URL normalization: scheme://host/path</text>
+
+    <rect class="box-bg ds" x="760" y="350" width="460" height="170" rx="8"/>
+    <text class="title" x="780" y="374">darkseed (brain)</text>
+    <text class="sub" x="780" y="392">SQLite + Hono API on :3001</text>
+    <text class="sub" x="780" y="406">Vite dashboard on :5173</text>
+    <text class="sub" x="780" y="420">reports/inbox/ watcher → ingester → chains</text>
+    <text class="sub" x="780" y="434">absorbs Agent B's Flask ops view</text>
+    <text class="sub" x="780" y="448">KB + similarity (TF-IDF) + labels.jsonl</text>
+    <text class="sub" x="780" y="472">PoC: archive-only (no agent priors yet)</text>
+    <text class="sub" x="780" y="486">v2: agent-priors loop via HTTP API</text>
+
+    <text class="sub" x="760" y="514" fill="#60a5fa">B_started / B_complete / B_error written by Kali ADB</text>
+
+    <!-- Cable / handoff arrows -->
+    <path class="arrow dev" d="M 420 270 L 475 270" marker-end="url(#arrowD)"/>
+    <path class="arrow dev" d="M 695 270 L 740 270" marker-end="url(#arrowD)"/>
+
+    <!-- A writes to device -->
+    <path class="arrow a dashed" d="M 290 178 C 350 180, 460 230, 495 270" marker-end="url(#arrowA)"/>
+    <text class="sub" x="305" y="170" fill="#34d399">writes playbook + hooks + tarball + state.A_complete</text>
+
+    <!-- B reads + writes -->
+    <path class="arrow b dashed" d="M 760 280 C 720 285, 700 280, 695 280" marker-end="url(#arrowB)"/>
+    <path class="arrow b dashed" d="M 695 340 C 720 350, 760 360, 760 380" marker-end="url(#arrowB)"/>
+    <text class="sub" x="710" y="340" fill="#60a5fa">B reads playbook · writes dynamic_results + state.B_complete</text>
+
+    <!-- Publisher into darkseed -->
+    <path class="arrow ds" d="M 950 350 L 950 330" marker-end="url(#arrow)"/>
+    <text class="sub" x="780" y="345" fill="#a78bfa">dyn-publisher writes joint .md → /reports/inbox/ + blobs/</text>
+  </svg>
+  <div class="legend" style="margin-top: 8px;">
+    <span class="li"><span class="sw" style="background: var(--a-tone)"></span>Agent A / macOS</span>
+    <span class="li"><span class="sw" style="background: var(--b-tone)"></span>Agent B / Kali</span>
+    <span class="li"><span class="sw" style="background: var(--ds-tone)"></span>darkseed</span>
+    <span class="li"><span class="sw" style="background: var(--dev-tone)"></span>device / handoff</span>
+  </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="lifecycle">
+  <h2><span class="num">§3</span> Report lifecycle (strict state machine)</h2>
+  <p class="lead">Every app under investigation lives in exactly one state at any time. Each transition is gated by an evidence check. The operator's <em>Reports</em> tab renders state as a colored pill.</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 480" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52525b"/></marker>
+    </defs>
+
+    <!-- States as colored chips -->
+    <g transform="translate(40, 60)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">scoring</text>
+      <text class="sub" x="14" y="40">DARBEK pull running</text>
+    </g>
+    <g transform="translate(220, 60)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">score_complete</text>
+      <text class="sub" x="14" y="40">card has score</text>
+    </g>
+    <g transform="translate(400, 60)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">awaiting_slice</text>
+      <text class="sub" x="14" y="40">if score ≥ threshold</text>
+    </g>
+    <g transform="translate(580, 60)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">slicing</text>
+      <text class="sub" x="14" y="40">JADX/Ghidra running</text>
+    </g>
+    <g transform="translate(760, 60)">
+      <rect class="box-bg a" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">sliced</text>
+      <text class="sub" x="14" y="40">decompile complete</text>
+    </g>
+    <g transform="translate(940, 60)">
+      <rect class="box-bg a" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">hunt_running</text>
+      <text class="sub" x="14" y="40">Agent A rubric pass</text>
+    </g>
+    <g transform="translate(1120, 60)">
+      <rect class="box-bg a" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">hunt_complete</text>
+      <text class="sub" x="14" y="40">playbook + rubrics on device</text>
+    </g>
+
+    <!-- handoff -->
+    <g transform="translate(1120, 160)">
+      <rect class="box-bg dev" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">awaiting_dynamic</text>
+      <text class="sub" x="14" y="40">cable → Kali</text>
+    </g>
+    <g transform="translate(940, 160)">
+      <rect class="box-bg b" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">dynamic_running</text>
+      <text class="sub" x="14" y="40">B_started</text>
+    </g>
+    <g transform="translate(760, 160)">
+      <rect class="box-bg b" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">dynamic_complete</text>
+      <text class="sub" x="14" y="40">B_complete + results.json</text>
+    </g>
+    <g transform="translate(580, 160)">
+      <rect class="box-bg dev" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">awaiting_pickup</text>
+      <text class="sub" x="14" y="40">cable → Mac</text>
+    </g>
+    <g transform="translate(400, 160)">
+      <rect class="box-bg ds" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">published</text>
+      <text class="sub" x="14" y="40">joint .md in darkseed inbox</text>
+    </g>
+    <g transform="translate(220, 160)">
+      <rect class="box-bg a" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">in_review</text>
+      <text class="sub" x="14" y="40">operator inspects proofs</text>
+    </g>
+    <g transform="translate(40, 160)">
+      <rect class="box-bg acc" x="0" y="0" width="150" height="56" rx="8"/>
+      <text class="title" x="14" y="22">verified</text>
+      <text class="sub" x="14" y="40">TP / FP set; complete</text>
+    </g>
+
+    <!-- terminal branches -->
+    <g transform="translate(40, 280)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8" style="stroke: #dc2626;"/>
+      <text class="title" x="14" y="22">flipped</text>
+      <text class="sub" x="14" y="40">verdict differs from priors</text>
+    </g>
+    <g transform="translate(220, 280)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8" style="stroke: #ca8a04;"/>
+      <text class="title" x="14" y="22">inconclusive</text>
+      <text class="sub" x="14" y="40">evidence too thin</text>
+    </g>
+    <g transform="translate(400, 280)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8" style="stroke: #fb923c;"/>
+      <text class="title" x="14" y="22">errored</text>
+      <text class="sub" x="14" y="40">A_error or B_error</text>
+    </g>
+    <g transform="translate(580, 280)">
+      <rect class="box-bg" x="0" y="0" width="150" height="56" rx="8" style="stroke: #71717a;"/>
+      <text class="title" x="14" y="22">archived</text>
+      <text class="sub" x="14" y="40">retired by operator</text>
+    </g>
+
+    <!-- Forward arrows -->
+    <path class="arrow" d="M 190 88 L 220 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 370 88 L 400 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 550 88 L 580 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 730 88 L 760 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 910 88 L 940 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 1090 88 L 1120 88" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 1195 116 L 1195 160" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 1120 188 L 1090 188" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 940 188 L 910 188" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 760 188 L 730 188" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 580 188 L 550 188" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 400 188 L 370 188" marker-end="url(#arrL)"/>
+    <path class="arrow" d="M 220 188 L 190 188" marker-end="url(#arrL)"/>
+
+    <!-- terminal divergences -->
+    <path class="arrow dashed" d="M 115 216 L 115 280" marker-end="url(#arrL)"/>
+    <path class="arrow dashed" d="M 295 216 L 295 280" marker-end="url(#arrL)"/>
+    <path class="arrow dashed" d="M 1000 216 C 1000 240, 475 240, 475 280" marker-end="url(#arrL)"/>
+    <path class="arrow dashed" d="M 80 216 C 50 240, 50 320, 580 320 L 655 320" marker-end="url(#arrL)"/>
+
+    <!-- Lane labels -->
+    <text class="lane" x="40" y="30">forward path</text>
+    <text class="lane" x="40" y="265">terminal states</text>
+  </svg>
+
+  <div class="legend" style="margin-top: 8px;">
+    <span class="li"><span class="sw" style="background: var(--a-tone)"></span>owned by Agent A</span>
+    <span class="li"><span class="sw" style="background: var(--b-tone)"></span>owned by Agent B</span>
+    <span class="li"><span class="sw" style="background: var(--dev-tone)"></span>device transit</span>
+    <span class="li"><span class="sw" style="background: var(--ds-tone)"></span>darkseed processing</span>
+    <span class="li"><span class="sw" style="background: var(--accent)"></span>operator decision</span>
+  </div>
+  </div>
+
+  <div class="grid-2" style="margin-top: 16px;">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Transition gates (each requires evidence)</h4>
+      <table class="dt">
+        <tr><td><code>scoring → score_complete</code></td><td>DARBEK scrape returns a score row + metadata</td></tr>
+        <tr><td><code>score_complete → awaiting_slice</code></td><td>score ≥ threshold (configurable; below → archived)</td></tr>
+        <tr><td><code>awaiting_slice → slicing</code></td><td>operator clicks <em>Slice</em>; JADX + Ghidra + native extractors invoked</td></tr>
+        <tr><td><code>slicing → sliced</code></td><td>decompile output exists; tarball is sha-computed</td></tr>
+        <tr><td><code>sliced → hunt_running</code></td><td>operator clicks <em>Run Agent A Hunt</em></td></tr>
+        <tr><td><code>hunt_running → hunt_complete</code></td><td><code>riskware_comprehensive_report.md</code> + <code>execution_playbook.json</code> exist locally</td></tr>
+        <tr><td><code>hunt_complete → awaiting_dynamic</code></td><td>everything pushed to device; <code>state.A_complete</code> written</td></tr>
+        <tr><td><code>awaiting_dynamic → dynamic_running</code></td><td><code>state.B_started</code> appears (cable now on Kali)</td></tr>
+        <tr><td><code>dynamic_running → dynamic_complete</code></td><td><code>state.B_complete</code> + <code>dynamic_results.json</code> exist on device</td></tr>
+        <tr><td><code>dynamic_complete → awaiting_pickup</code></td><td>Mac ADB regains device; results pulled</td></tr>
+        <tr><td><code>awaiting_pickup → published</code></td><td>publisher renders joint .md into darkseed inbox + blobs stored</td></tr>
+        <tr><td><code>published → in_review</code></td><td>ingester succeeded; chain exists in darkseed; A's <em>Proofs</em> tab populated</td></tr>
+        <tr><td><code>in_review → verified</code></td><td>operator sets verdict (TP or FP) in A's dashboard; mirrored to darkseed</td></tr>
+        <tr><td><code>* → errored</code></td><td><code>state.A_error</code> or <code>state.B_error</code> at any point</td></tr>
+      </table>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Cable-move tolerance</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        The cable is moved by a human between Mac and Kali. The state machine handles brief device-offline windows:
+      </p>
+      <ul style="margin: 6px 0 0 18px; padding: 0; color: var(--muted); font-size: 12px;">
+        <li>Mac's collector polls every 5s for state files; when device disconnects, the row pauses at its current state, no transition fires.</li>
+        <li>Kali's <code>dyn-playbook-scout</code> polls the same dir every 5s once cable arrives; sees <code>state.A_complete</code>, claims <code>state.B_started</code>.</li>
+        <li>The <code>awaiting_dynamic</code> and <code>awaiting_pickup</code> states have a configurable TTL (default 30min, soft warn). Operator can override.</li>
+        <li>If a job is left in <code>awaiting_*</code> &gt; TTL, it surfaces on both dashboards as <strong>stuck</strong> with the actor's last-seen heartbeat.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="device">
+  <h2><span class="num">§4</span> Device handoff — definitive filesystem layout</h2>
+  <p class="lead">Per-job directory on the rooted Pixel 7. This is the contract surface between A, B, and the publisher. Single device, single job at a time during PoC.</p>
+
+  <div class="panel">
+<pre style="margin: 0; font-size: 12px;">/data/local/tmp/riskware_handoff/&lt;job_id&gt;/
+├── <span style="color: #fbbf24">state.A_complete</span>     ← A wrote playbook + all rubrics; B may claim
+├── <span style="color: #fbbf24">state.A_ack</span>          ← A pulled B's results; B may wipe staging on next reconnect
+├── <span style="color: #fbbf24">state.A_error</span>        ← static analysis fatal
+├── <span style="color: #fbbf24">state.B_started</span>      ← B claimed hardware lock
+├── <span style="color: #fbbf24">state.B_complete</span>     ← dynamic_results.json staged
+├── <span style="color: #fbbf24">state.B_error</span>        ← dynamic run fatal
+│
+├── <span style="color: #34d399">execution_playbook.json</span>     ← A produces, B consumes (schema v1.1)
+├── <span style="color: #34d399">manifest_summary.json</span>       ← A produces (NEW, see EXT-1) — tiny machine-readable APK summary
+├── <span style="color: #34d399">base.apk</span>  OR  &lt;package&gt;.apk ← may be absent if pre-existing install
+│
+├── <span style="color: #34d399">riskware_evidences/</span>          ← A produces
+│   ├── rubrics/
+│   │   └── riskware_rubric_&lt;RID&gt;_&lt;slug&gt;.md   (with expected_indicators YAML, see EXT-2)
+│   ├── triggers/
+│   │   ├── riskware_trigger_&lt;RID&gt;_hook.js
+│   │   ├── riskware_trigger_&lt;RID&gt;_<span style="color: #fbbf24">hook_synth.js</span>  ← B writes back here if synthesized
+│   │   ├── riskware_trigger_&lt;RID&gt;_mock.json
+│   │   └── riskware_trigger_&lt;RID&gt;_adb.sh
+│   ├── decryptors/
+│   │   ├── riskware_decryptor_&lt;N&gt;_&lt;algo&gt;.py
+│   │   └── riskware_decryptor_&lt;N&gt;_string_map.md
+│   └── screenshots/
+│       ├── riskware_screenshot_&lt;ID&gt;_cloaked.png
+│       └── riskware_screenshot_&lt;ID&gt;_uncloaked.png
+│
+├── <span style="color: #34d399">static/decompiled.tar.gz</span>     ← A produces (DECIDE-5) — JADX + Ghidra + native, ~3-15MB
+│
+├── <span style="color: #34d399">riskware_comprehensive_report.md</span>     ← A produces (incl. Static-Self-Sufficient flag)
+│
+├── <span style="color: #60a5fa">dynamic_results/</span>             ← B produces
+│   ├── step_&lt;N&gt;_&lt;action&gt;.log
+│   ├── frida_&lt;job&gt;_vpn_&lt;exit&gt;.ndjson   ← pure NDJSON (DECIDE-8)
+│   ├── logcat_&lt;job&gt;_vpn_&lt;exit&gt;.txt     ← logcat_capture
+│   ├── trigger_&lt;job&gt;_vpn_&lt;exit&gt;.log
+│   ├── ui_capture_*.png
+│   └── har_&lt;job&gt;_vpn_&lt;exit&gt;.har        ← if HTTP Toolkit was active
+│
+├── <span style="color: #60a5fa">dynamic_results.json</span>          ← B produces (schema v1.1, see §5)
+│
+└── <span style="color: #a78bfa">joint_report.md</span>               ← publisher produces after B_complete; this is what darkseed ingests
+</pre>
+  </div>
+
+  <div class="panel compact" style="margin-top: 14px;">
+    <h4 style="margin: 0 0 6px;">Per-actor write ownership (single-writer per file)</h4>
+    <ul style="margin: 0 0 0 18px; padding: 0; color: var(--muted); font-size: 12px;">
+      <li><span class="pill a">A</span> owns all <code>riskware_*</code>, <code>execution_playbook.json</code>, <code>manifest_summary.json</code>, <code>static/decompiled.tar.gz</code>, <code>state.A_*</code></li>
+      <li><span class="pill b">B</span> owns all <code>dynamic_results/*</code>, <code>dynamic_results.json</code>, <code>state.B_*</code>. B may write <code>riskware_evidences/triggers/*_hook_synth.js</code> alongside A's hooks (full transparency, DECIDE-A1).</li>
+      <li><span class="pill ds">publisher</span> owns <code>joint_report.md</code>. Reads from both sides; never writes to A's or B's files.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="contracts">
+  <h2><span class="num">§5</span> Contracts A→B + B→A</h2>
+  <p class="lead">The two JSON contracts that travel through the device. Schema versions bumped to 1.1 to absorb the resolved DECIDEs.</p>
+
+  <div class="grid-2">
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;"><span class="pill a">A → B</span> execution_playbook.json (v1.1)</h4>
+<pre style="margin: 0; font-size: 11px;">{
+  "schema_version": "1.1",
+  "job_metadata": {
+    "report_id": "...",
+    "job_id": "&lt;pkg&gt;_&lt;sha8&gt;",
+    "package_name": "com.example.app",
+    "marmot_id": "&lt;artifact_id&gt;",     ← internal stable ID
+    "apk_sha256": "...",
+    "created_at": "ISO-8601",
+    "static_score": 24,                   ← A's pre-dynamic estimate (immutable)
+    "manual_review_required": false,
+    "global_ttl_minutes": 30,
+    "static_self_sufficient_a": "yes",   ← DECIDE-13
+    "install_source": "pre_existing"      ← DECIDE-10
+  },
+  "asset_pointers": {
+    "host_staging_path": "C:\\pentest-lab\\jobs\\&lt;job_id&gt;\\pulled_assets\\",
+    "device_apk_path": "/data/local/tmp/.../base.apk",
+    "device_frida_scripts": [...],
+    "device_decompiled_tarball": "static/decompiled.tar.gz",
+    "device_manifest_summary": "manifest_summary.json"
+  },
+  "dynamic_execution_pipeline": [
+    {
+      "step": 1, "action": "pull_assets_to_host",
+      "depends_on": [], "on_failure": "abort",
+      "timeout_seconds": 60, "rubric_ids": [],
+      "success_criteria": "..."
+    },
+    {"step": 2, "action": "sanitize_environment", ...},
+    {"step": 3, "action": "install_apk", ...},
+    {"step": 4, "action": "spawn_with_frida",
+     "rubric_ids": ["S5"],
+     "allow_hook_synthesis": true,        ← DECIDE-A1
+     "tap_required": false                ← DECIDE-A2 (push-nag exclusion)
+    }
+  ]
+}</pre>
+    </div>
+    <div class="panel b-side compact">
+      <h4 style="margin: 0 0 6px;"><span class="pill b">B → A</span> dynamic_results.json (v1.1)</h4>
+<pre style="margin: 0; font-size: 11px;">{
+  "schema_version": "1.1",
+  "job_id": "...",
+  "agent": "B",
+  "host_platform": "Windows 11 → Kali",
+  "completed_at": "ISO-8601",
+  "overall_verdict": "confirmed | unconfirmed | inconclusive | error",
+  "static_self_sufficient_b": "yes",     ← B's review of A's output (DECIDE-13)
+  "verified_score": 28,                    ← per-phase confirmations (DECIDE-A4)
+  "verified_score_delta": +4,
+  "steps": [
+    {"step": 4, "action": "spawn_with_frida",
+     "status": "verified",
+     "rubric_id": "S5", "phase": 2,       ← phase-level granularity (DECIDE-4)
+     "artifacts": ["dynamic_results/frida_&lt;job&gt;_vpn_brazil.ndjson"],
+     "iocs": [...],
+     "duration_seconds": 124.5,
+     "hook_used": "agent_a",              ← agent_a | synth | both
+     "synth_reason": null}
+  ],
+  "iocs": [
+    {"type": "url",
+     "value": "https://...",
+     "observed_in_step": 4,
+     "rubric_id": "S5", "phase": 2,
+     "confidence": "high",
+     "artifact_ref": "dynamic_results/...",
+     "vpn_state_at_observation": "brazil",
+     "extra": {"sink": "URL.&lt;init&gt;"}}
+  ],
+  "evasion_delta": {
+    "rubric": "M8", "tested": true,
+    "vpn_exits_tested": ["brazil", "us", "uk"],
+    "normalized_url_count_per_vpn": {...},
+    "endpoints_common_to_all_vpns": [...],
+    "endpoints_only_under_each_vpn": {...},
+    "device_signals_observed": {...},
+    "delta_confirmed": true,
+    "behavior_summary": "..."
+  },
+  "framework_limitations": [               ← DECIDE-A5
+    {"framework": "flutter",
+     "reason": "universal hook does not cover dart:io.HttpClient"}
+  ],
+  "errors": [],
+  "notes": ["HTTP Toolkit active", "..."]
+}</pre>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 20px;">§5.5 New small contract — <code>manifest_summary.json</code> (A produces, EXT-1)</h3>
+  <div class="panel compact">
+<pre style="margin: 0; font-size: 11px;">{
+  "package_name": "com.behemoth.movhdnew",
+  "version_name": "2.4.1",
+  "version_code": 2410,
+  "min_sdk": 21, "target_sdk": 33,
+  "is_split_install": false,
+  "main_launcher_activity": "xyz.kkstudio.gomovies.view.Splash",
+  "exported_activities": [...],
+  "non_exported_activities": [...],
+  "permissions": ["INTERNET", "ACCESS_NETWORK_STATE", ...],
+  "frameworks_detected": ["native"],
+  "tech_detector_evidence": {
+    "flutter": false, "unity": false, "react_native": false, "cocos": false
+  },
+  "native_libs": [
+    {"name": "libcheckin.so", "arch": "arm64-v8a",
+     "exports": ["checkin_init", "checkin_send"]}
+  ]
+}</pre>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="joint-report">
+  <h2><span class="num">§6</span> Joint report — the darkseed inbox contract</h2>
+  <p class="lead">One markdown file per completed job, written by the publisher into <code>~/darkseed/data/reports/inbox/&lt;job_id&gt;.md</code>. This is the canonical contract surface with darkseed. Sections are structured (DECIDE-2) so the ingester upgrade can lift fields losslessly.</p>
+
+  <div class="panel">
+<pre style="margin: 0; font-size: 11.5px;">---
+id: &lt;job_id&gt;
+report_id: &lt;report_id from A's dashboard&gt;
+category: riskware
+declared_label: tp                    # set when overall_verdict == "confirmed"
+source: jetski-system-b
+first_seen: 2026-05-21T20:00:00Z
+tags: [evasion, geoip, M8, behemoth, multi-vpn]
+app:
+  package_name: com.behemoth.movhdnew
+  version_name: "2.4.1"
+  version_code: 2410
+  apk_sha256: ea211b4c...
+  artifact_id: &lt;marmot_id&gt;
+  install_source: pre_existing
+scoring:
+  static_score: 24
+  verified_score: 28
+  score_delta: +4
+custom:
+  vpn_exits_tested: [brazil, united_states, ukraine]
+  evasion_delta_confirmed: true
+  static_self_sufficient_a: yes
+  static_self_sufficient_b: yes
+  agent_b_artifacts_root: dynamic_results/
+---
+
+# &lt;package&gt;: confirmed riskware chain
+
+## Static-Analysis Self-Sufficient
+| flag | value | reason |
+|---|---|---|
+| A self-rated | yes | full source-to-sink trace |
+| B reviewed | yes | rubrics + decompiled source coherent |
+
+## Static Evidence (from Agent A)
+
+### Rubric M8 — Device Info Cloaking & Evasion
+**MITRE: T1633.001 — Defense Evasion (System Checks)**
+
+#### Phase 1: Source / Evasion Gate (`xyz.kkstudio.gomovies.view.Splash.A`)
+&lt;prose + java snippet&gt;
+
+#### Phase 2: External GeoIP Probe (`defpackage.fo2`)
+&lt;prose + java snippet&gt;
+
+#### Phase 3: Execution Sink (`xyz.kkstudio.gomovies.view.Splash.Y`)
+&lt;prose + java snippet&gt;
+
+```yaml
+expected_indicators:               # from EXT-2 in A's rubric
+  urls: [https://play.google.com/...]
+  api_calls: [URL.openConnection, WebView.loadUrl]
+  class_refs: [xyz.kkstudio.gomovies.view.Splash, ...Splash.A]
+  shared_pref_files: []
+```
+
+## Dynamic Evidence (from Agent B)
+
+Frida runtime: 4s settle + trigger + 35s observation per VPN exit.
+Universal hook layer: WebView.loadUrl, java.net.URL.&lt;init&gt;, okhttp3.Request$Builder.url,
+Locale.getDefault, TimeZone.getDefault, TelephonyManager.getSimCountryIso, Intent.setData.
+
+### Per-VPN observations
+
+#### VPN: brazil
+- 15 URLs captured
+- Notable: `play.google.com/store/apps/details?id=com.behemoth.movhdnew` × 2 (S5/M8 P1)
+
+#### VPN: united_states
+- 9 URLs captured
+- Play Store check ABSENT (confirms M8 P2 geo-gate)
+
+#### VPN: ukraine
+- 10 URLs captured
+
+### Evasion Delta
+```
+delta_confirmed: true
+rubric: M8
+endpoints_only_under_each_vpn:
+  brazil:        [https://play.google.com/store/apps/details, ...]
+  united_states: []
+  ukraine:       []
+```
+
+## IOCs
+
+Format: `&lt;type&gt; &lt;value&gt;  [vpn=&lt;exit&gt;] [rubric=&lt;RID&gt;]`
+
+- url    https://play.google.com/store/apps/details?id=com.behemoth.movhdnew  [vpn=brazil]   [rubric=M8]
+- url    https://api.adfly.global/api/ig/sdk/init  [vpn=brazil,us,uk]  [rubric=M8]
+- sha256 ea211b4c...  (apk)
+- class  xyz.kkstudio.gomovies.view.Splash
+- method WebView.loadUrl                                                       [rubric=S5]
+
+## Artifacts on disk
+
+(stored by sha256, referenced by relative path below)
+
+- static/decompiled.tar.gz                   (source_artifact, ~7.4 MB)
+- riskware_evidences/triggers/riskware_trigger_M8_hook.js                  (frida_trace script)
+- riskware_evidences/triggers/riskware_trigger_M8_hook_synth.js            (synthesized, dyn-hook-synth)
+- riskware_evidences/triggers/riskware_trigger_M8_mock.json                (trigger_mock)
+- riskware_evidences/decryptors/riskware_decryptor_01_XOR.py               (decryptor_artifact)
+- dynamic_results/frida_&lt;job&gt;_vpn_brazil.ndjson                            (frida_trace, NDJSON)
+- dynamic_results/logcat_&lt;job&gt;_vpn_brazil.txt                              (logcat_capture)
+- dynamic_results/har_&lt;job&gt;_vpn_brazil.har                                 (har_capture, opt)
+- riskware_evidences/screenshots/riskware_screenshot_M8_cloaked.png        (ui_capture, paired)
+- riskware_evidences/screenshots/riskware_screenshot_M8_uncloaked.png      (ui_capture, paired)
+
+## Notes
+- HTTP Toolkit active for this run; HAR captured at &lt;path&gt;.
+- Frida hook_used: both (A's bypass + B's synth for phase 2 fan-out).
+- Pre-existing installation retained.
+</pre>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="schema">
+  <h2><span class="num">§7</span> darkseed schema additions (Phase 10 migration)</h2>
+  <p class="lead">SQL changes needed to model the joint system. Forward-compatible with the existing schema; nothing in Phases 1-8 changes.</p>
+
+  <div class="panel">
+<pre style="margin: 0; font-size: 11px;">-- migrations/005_a_b_integration.sql
+
+-- 1. Extend reports lifecycle states (DECIDE STATES)
+-- Existing report.status: pending | processing | ingested | rejected
+-- Add: scoring | score_complete | awaiting_slice | slicing | sliced
+--      | hunt_running | hunt_complete | awaiting_dynamic
+--      | dynamic_running | dynamic_complete | awaiting_pickup
+--      | in_review | verified | flipped | inconclusive | errored | archived
+-- (enforced in app layer; SQLite has no enum check)
+
+-- 2. Score fields
+ALTER TABLE reports ADD COLUMN static_score INTEGER;
+ALTER TABLE reports ADD COLUMN verified_score INTEGER;
+ALTER TABLE reports ADD COLUMN score_delta INTEGER;
+ALTER TABLE reports ADD COLUMN static_self_sufficient_a TEXT;   -- yes | no
+ALTER TABLE reports ADD COLUMN static_self_sufficient_b TEXT;   -- yes | no
+
+-- 3. App augmentations
+ALTER TABLE apps ADD COLUMN marmot_id TEXT;
+ALTER TABLE apps ADD COLUMN install_source TEXT;                -- DECIDE-10
+ALTER TABLE apps ADD COLUMN manifest_summary_blob_sha TEXT;     -- EXT-1
+
+-- 4. Chains carry the evasion delta + verification
+ALTER TABLE chains ADD COLUMN evasion_delta_json TEXT;          -- DECIDE-A4
+ALTER TABLE chains ADD COLUMN vpn_exits_tested TEXT;            -- JSON array
+ALTER TABLE chains ADD COLUMN agent_a_static_score INTEGER;
+ALTER TABLE chains ADD COLUMN agent_b_verified_score INTEGER;
+
+-- 5. IOCs carry per-observation VPN + phase
+ALTER TABLE iocs ADD COLUMN vpn_state TEXT;                     -- DECIDE-1
+ALTER TABLE iocs ADD COLUMN rubric_id TEXT;
+ALTER TABLE iocs ADD COLUMN phase INTEGER;                      -- DECIDE-4
+
+-- 6. Nodes know which rubric phase they came from
+ALTER TABLE chain_nodes ADD COLUMN rubric_id TEXT;
+ALTER TABLE chain_nodes ADD COLUMN phase INTEGER;
+CREATE INDEX IF NOT EXISTS idx_nodes_rubric ON chain_nodes(rubric_id);
+
+-- 7. Workflows (DECIDE-14)
+CREATE TABLE IF NOT EXISTS workflows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rubric_id TEXT NOT NULL,
+  package_sha TEXT,                  -- nullable when generic across packages
+  name TEXT NOT NULL,
+  description_md TEXT,
+  trigger_steps_json TEXT NOT NULL,   -- the ordered (hook + adb + mock) tuple
+  success_count INTEGER NOT NULL DEFAULT 1,
+  last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+  source TEXT,                       -- 'auto:from_chain:&lt;chain_id&gt;' | 'manual'
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by_kind TEXT, created_by_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_workflows_rubric ON workflows(rubric_id);
+
+-- 8. Reviewer-facing per-app summary view (denormalized for the dashboard)
+CREATE VIEW IF NOT EXISTS reports_view AS
+SELECT r.id, r.app_id, r.status,
+       r.static_score, r.verified_score, r.score_delta,
+       r.declared_label, r.effective_label, r.flipped,
+       a.package_name, a.marmot_id, a.install_source,
+       c.id AS chain_id, c.verdict, c.severity,
+       r.imported_at, r.reviewed_at
+FROM reports r
+LEFT JOIN apps a ON a.id = r.app_id
+LEFT JOIN chains c ON c.source_report_id = r.id;</pre>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="evidence-kinds">
+  <h2><span class="num">§8</span> Evidence kinds — additions</h2>
+  <p class="lead">New per-kind evidence types added to the discriminated union (existing kinds keep working).</p>
+  <table class="dt">
+    <thead><tr><th>kind</th><th>cat</th><th>blob?</th><th>payload</th><th>produced by</th><th>DECIDE</th></tr></thead>
+    <tbody>
+      <tr><td><code>trigger_mock</code></td><td><span class="pill a">static</span></td><td>yes — mock JSON</td><td><code>{rubric_id, success_count}</code></td><td>Agent A</td><td>DECIDE-6 <span class="pill new">new</span></td></tr>
+      <tr><td><code>decryptor_artifact</code></td><td><span class="pill a">static</span></td><td>yes — .py</td><td><code>{algorithm, success_count, last_used_at}</code></td><td>Agent A</td><td>DECIDE-7 <span class="pill new">new</span></td></tr>
+      <tr><td><code>logcat_capture</code></td><td><span class="pill b">dynamic</span></td><td>yes — .txt</td><td><code>{vpn_state, line_count}</code></td><td>Agent B</td><td>DECIDE-9 <span class="pill new">new</span></td></tr>
+      <tr><td><code>frida_trace</code> (extended)</td><td><span class="pill b">dynamic</span></td><td>yes — NDJSON</td><td><code>{events[], scriptBlobSha256, hook_used, vpn_state}</code></td><td>Agent B</td><td>DECIDE-8 (NDJSON now mandatory)</td></tr>
+      <tr><td><code>source_artifact</code> (extended)</td><td><span class="pill a">static</span></td><td>yes — tar.gz</td><td><code>{language, is_tarball, jadx_version, ghidra_version, highlights[]}</code></td><td>Agent A</td><td>DECIDE-5 (tarball)</td></tr>
+      <tr><td><code>ui_capture</code> (paired)</td><td><span class="pill a">static</span> + <span class="pill b">dynamic</span></td><td>yes — png</td><td><code>{rubric_id, pair_role: cloaked\|uncloaked\|standalone}</code></td><td>both</td><td>existing kind, pair semantics added</td></tr>
+      <tr><td><code>har_capture</code></td><td><span class="pill b">dynamic</span></td><td>yes — .har</td><td><code>{entries[], vpn_state}</code></td><td>Agent B</td><td>existing</td></tr>
+      <tr><td><code>kb_match</code></td><td><span class="pill a">static</span> or <span class="pill b">dynamic</span></td><td>no</td><td><code>{polarity, category, confidence, indicator_id}</code></td><td>ingester</td><td>auto-attached on IOC match</td></tr>
+      <tr><td><code>verification_result</code></td><td><span class="pill b">dynamic</span></td><td>no</td><td><code>{rubric_id, phase, verdict: confirmed\|refuted\|inconclusive, evidence_refs[]}</code></td><td>Agent B</td><td><span class="pill new">new</span> — per-phase verification</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="indicator-types">
+  <h2><span class="num">§9</span> Indicator types + KB</h2>
+  <p class="lead">DECIDE-12 expanded enum. The KB now models package-namespace fingerprints and per-method/per-symbol patterns.</p>
+  <table class="dt">
+    <thead><tr><th>type</th><th>example value</th><th>typical polarity</th><th>use</th></tr></thead>
+    <tbody>
+      <tr><td><code>package</code></td><td>com.flubot.banker</td><td>malicious</td><td>existing — known-bad apps</td></tr>
+      <tr><td><code>domain</code> · <code>url</code> · <code>ip</code></td><td>c2.flubot.invalid · https://… · 1.2.3.4</td><td>both</td><td>existing — network</td></tr>
+      <tr><td><code>sha256</code> · <code>md5</code></td><td>(64 / 32 hex)</td><td>both</td><td>existing — file identity</td></tr>
+      <tr><td><code>cert</code> · <code>ja3</code></td><td>fingerprint</td><td>both</td><td>existing — TLS / network identity</td></tr>
+      <tr><td><code>elf</code></td><td>libcheckin.so@sha256</td><td>malicious</td><td>existing — native binary identity</td></tr>
+      <tr><td><span class="pill new">new</span> <code>library</code></td><td>com.applovin.sdk</td><td>benign (sdk) or malicious</td><td>DECIDE-12 — namespace-level. Powers Ad-SDK exclusion list (§6.2.1 of blueprint).</td></tr>
+      <tr><td><span class="pill new">new</span> <code>class</code></td><td>xyz.kkstudio.gomovies.view.Splash</td><td>malicious</td><td>DECIDE-12 — specific obfuscated class fingerprint</td></tr>
+      <tr><td><span class="pill new">new</span> <code>method</code></td><td>android.webkit.WebView.loadUrl</td><td>contextual</td><td>per-API hit (noisy; usually paired with class/package)</td></tr>
+      <tr><td><span class="pill new">new</span> <code>shared_pref_file</code></td><td>com.x.app_prefs.xml</td><td>malicious</td><td>family-specific config storage</td></tr>
+      <tr><td><span class="pill new">new</span> <code>native_symbol</code></td><td>libcheckin.so:checkin_init</td><td>malicious</td><td>for ELF-level hooks; pairs with manifest_summary native_libs</td></tr>
+      <tr><td><code>phone</code> · <code>email</code></td><td></td><td>malicious</td><td>existing</td></tr>
+    </tbody>
+  </table>
+  <div class="panel compact" style="margin-top: 12px;">
+    <h4 style="margin: 0 0 6px;">Ad-SDK list canonical source (DECIDE-A3)</h4>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      The 15 ad-SDK prefixes from blueprint §6.2.1 (<code>com.google.android.gms.ads</code>, <code>com.applovin.*</code>, <code>com.unity3d.ads.*</code>, …) live in <code>darkseed/data/kb-seed/benign.json</code> as <code>type: library</code>, <code>category: sdk</code>. Both Agent A's slicer prune step and Agent B's IOC noise-filter pull from this single source. <code>pnpm kb:seed</code> re-imports on edit.
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="hook-synth">
+  <h2><span class="num">§10</span> Hook synthesis + write-back loop</h2>
+  <p class="lead">DECIDE-A1 — full autonomy + full transparency. Agent B's <code>dyn-hook-synth</code> may produce a Frida hook whenever Agent A's hook is silent or doesn't cover the phase being proved. New IOCs round-trip back into A's rubric on the next investigation cycle.</p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 360" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrH" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+    </defs>
+
+    <rect class="box-bg a" x="40" y="40" width="220" height="100" rx="10"/>
+    <text class="title" x="60" y="64">① A ships hook?</text>
+    <text class="sub" x="60" y="84">riskware_trigger_&lt;RID&gt;_hook.js</text>
+    <text class="sub" x="60" y="100">load order: A first, B universal, B synth (if any), UI driver</text>
+    <text class="sub" x="60" y="118">if missing OR doesn't fire → §②</text>
+
+    <path d="M 260 90 L 320 90" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arrH)"/>
+
+    <rect class="box-bg b" x="320" y="40" width="240" height="100" rx="10"/>
+    <text class="title" x="340" y="64">② B synthesizes</text>
+    <text class="sub" x="340" y="84">dyn-hook-synth: rubric phases + intent</text>
+    <text class="sub" x="340" y="100">recipes per RID (S4/M8 root, S10/S11 time-gate,</text>
+    <text class="sub" x="340" y="116">S9 vpn observer, M8 GeoIP, S5/S6 setData, M1/M2 sp)</text>
+
+    <path d="M 560 90 L 620 90" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arrH)"/>
+
+    <rect class="box-bg dev" x="620" y="40" width="240" height="100" rx="10"/>
+    <text class="title" x="640" y="64">③ write-back to device</text>
+    <text class="sub" x="640" y="84">riskware_evidences/triggers/</text>
+    <text class="sub" x="640" y="100">  riskware_trigger_&lt;RID&gt;_hook_synth.js</text>
+    <text class="sub" x="640" y="116">sits alongside A's hook (no overwrite)</text>
+
+    <path d="M 860 90 L 920 90" stroke="#a78bfa" stroke-width="1.4" fill="none" marker-end="url(#arrH)"/>
+
+    <rect class="box-bg b" x="920" y="40" width="220" height="100" rx="10"/>
+    <text class="title" x="940" y="64">④ run + capture new IOCs</text>
+    <text class="sub" x="940" y="84">universal observer logs URLs/methods</text>
+    <text class="sub" x="940" y="100">B records hook_used = synth (or both)</text>
+
+    <!-- Round-trip arrow -->
+    <path d="M 1030 140 C 1030 200, 140 200, 140 140" stroke="#a78bfa" stroke-width="1.4" fill="none" stroke-dasharray="4 3" marker-end="url(#arrH)"/>
+
+    <rect class="box-bg a" x="40" y="220" width="540" height="110" rx="10"/>
+    <text class="title" x="60" y="244">⑤ round-trip into A's next-cycle rubric</text>
+    <text class="sub" x="60" y="262">publisher emits "new IOCs surfaced by synth" section in joint_report</text>
+    <text class="sub" x="60" y="278">darkseed's labels.jsonl row: source_agent = dyn-hook-synth, signal = new_indicator</text>
+    <text class="sub" x="60" y="294">when A re-investigates this package family, the synthesized indicators inform A's hunt</text>
+    <text class="sub" x="60" y="310">(deferred to v2: PoC keeps labels-only, no automatic re-prompt of A)</text>
+
+    <rect class="box-bg ds" x="620" y="220" width="520" height="110" rx="10"/>
+    <text class="title" x="640" y="244">⑥ darkseed records the proof</text>
+    <text class="sub" x="640" y="262">evidence kind: frida_trace with hook_used = synth, scriptBlobSha256 = &lt;sha&gt;</text>
+    <text class="sub" x="640" y="278">workflows row auto-created if dynamic confirms (DECIDE-14)</text>
+    <text class="sub" x="640" y="294">audit_log entry: actor = dyn-hook-synth, action = hook_synthesized</text>
+    <text class="sub" x="640" y="310">future hook-synth runs lookup workflows by (rubric_id, similar_package)</text>
+  </svg>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="scoring">
+  <h2><span class="num">§11</span> Score recompute — static + verified</h2>
+  <p class="lead">DECIDE-A4. Two numbers, both visible. Verdict is independent.</p>
+  <div class="grid-2">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">static_score (Agent A, immutable)</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+        Sum of (rubric_points × confidence_weight) over A's rubrics, capped at 120. Confidence: High=1.0, Medium=1.0, Low=0.0 (Low items only log as inconclusive signals — 0 pts).
+      </p>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Written once in <code>execution_playbook.json:job_metadata.static_score</code>, copied into <code>reports.static_score</code>. Never modified.
+      </p>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">verified_score (Agent B, mutable)</h4>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+        Per-rubric verification fires <code>verification_result</code> evidence: <code>confirmed</code> keeps the rubric's points, <code>refuted</code> zeroes them, <code>inconclusive</code> halves them. NEW rubrics that B discovered (e.g., via synth hook) ADD their points.
+      </p>
+      <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+        Lives in <code>dynamic_results.json:verified_score</code> + delta. Persists to <code>reports.verified_score</code> + <code>chains.severity_score</code>.
+      </p>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        UI shows: <code>24 → 28 (+4)</code>. Operator sees what A guessed vs what B proved.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="verdict">
+  <h2><span class="num">§12</span> Verdict mirror (A → darkseed)</h2>
+  <p class="lead">Operator sets verdict in Agent A's dashboard. A POSTs to darkseed so the chain's verdict + labels.jsonl stay synced. PoC: HTTP API on local network with auth-token bearer header.</p>
+
+  <div class="panel compact">
+<pre style="margin: 0; font-size: 11.5px;">// POST kali:3001/api/chains/&lt;chain_id&gt;/verdict
+// (Agent A's dashboard on Mac → darkseed on Kali)
+Headers:
+  x-actor-kind: user
+  x-actor-id: &lt;operator_email&gt;
+  x-mirror-from: agent_a_dashboard
+  authorization: Bearer &lt;darkseed_pat&gt;        # configured per-operator
+Body:
+{
+  "verdict": "malicious",                       # malicious | benign | inconclusive | pending
+  "notes": "operator reasoning markdown",
+  "static_score": 24,
+  "verified_score": 28,
+  "set_by_dashboard": "agent_a"
+}
+// darkseed responds:
+{ "ok": true, "flipped": true, "label_id": 42 }</pre>
+  </div>
+  <div class="panel compact" style="margin-top: 12px;">
+    <h4 style="margin: 0 0 6px;">Cable-mode fallback</h4>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      If darkseed is unreachable when the operator sets the verdict, A's dashboard queues the verdict locally. Next time the cable lands on Kali and the operator (or a cron) syncs, A POSTs queued verdicts to darkseed in order. The chain's <code>verdict_set_at</code> uses the original click time, not the sync time.
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="a-dashboard">
+  <h2><span class="num">§13</span> Agent A's minimal proof viewer (the only new UI on A's side)</h2>
+  <p class="lead">Six tabs. Daily-driver for the operator. No deep brain features — those live in darkseed.</p>
+
+  <div class="grid-2">
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 1 — Lock Queue</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Live list of locked apps from DARBEK (or whatever pluggable intake source). Manual: <em>Refresh</em>. Auto on a 5-min cron. Each row: package, marmot_id, lock state, score (when computed).
+      </p>
+    </div>
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 2 — Reports</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Two pills per row: <strong>state</strong> (scoring → … → verified) and <strong>verdict</strong> (TP / FP / pending / flipped). Sortable by score, age, state. Filter by state or verdict.
+      </p>
+    </div>
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 3 — Install + Slice</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Per locked app, <em>Slice</em> button. Synchronous: spawns JADX + Ghidra + native + framework detectors. Shows live log. On success: tarball sha computed, app row state → <code>sliced</code>.
+      </p>
+    </div>
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 4 — Hunt</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        <em>Run Agent A Hunt</em> button per sliced app. Triggers Agent A's rubric analysis. Shows running status, rubric matches as they fire, evidence file count. On success: state → <code>hunt_complete</code>. Operator told to move cable to Kali.
+      </p>
+    </div>
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 5 — Proofs (minimal)</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Per app in <code>in_review</code>: rendered <code>joint_report.md</code> (the same one darkseed got), with inline thumbnails for screenshots, expandable Frida ndjson timeline, HAR waterfall summary, per-VPN IOC chips. <strong>Read-only — no editing here.</strong>
+      </p>
+    </div>
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;">Tab 6 — Verdict</h4>
+      <p style="margin: 0; color: var(--muted); font-size: 12px;">
+        Per app, 4 buttons (TP / FP / inconclusive / pending) + notes textarea. On click: POSTs to local FS report.md AND darkseed (with cable-mode fallback per §12). State → <code>verified</code> or <code>flipped</code>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="b-subagents">
+  <h2><span class="num">§14</span> Agent B sub-agents</h2>
+  <p class="lead">Existing five + two new ones (the publisher and the optional priors-puller).</p>
+  <table class="dt">
+    <thead><tr><th>sub-agent</th><th>role</th><th>status</th></tr></thead>
+    <tbody>
+      <tr><td><code>dyn-device-health</code></td><td>ADB + frida-server + NordVPN preflight; restart frida-server if dead</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-playbook-scout</code></td><td>scan handoff dir; classify each job; output JSON manifest</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-frida-spawn</code></td><td>spawn target with layered hooks + corrected trigger + observation window</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-vpn-control</code></td><td>switch NordVPN exits and verify external IP</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-evasion-analyzer</code></td><td>compute normalized evasion_delta from per-VPN IOC sets</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-hook-synth</code></td><td>synthesize Frida hooks when A's are silent (DECIDE-A1)</td><td><span class="pill done">existing</span></td></tr>
+      <tr><td><code>dyn-publisher</code></td><td>after <code>state.B_complete</code>: pull entire handoff dir → convert ndjson → render <code>joint_report.md</code> → write to <code>~/darkseed/data/reports/inbox/</code> + blobs</td><td><span class="pill new">new</span></td></tr>
+      <tr><td><code>dyn-priors</code></td><td>v2 only: query darkseed for similar past chains + KB hits before each spawn, inject into Agent B's session prompt</td><td><span class="pill idea">v2</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="workflows">
+  <h2><span class="num">§15</span> Workflows — reusable trigger sequences</h2>
+  <p class="lead">DECIDE-14. Confirmed trigger sequences (hook + adb + mock tuple) get promoted automatically. Operator can curate / delete in a darkseed workflows panel.</p>
+  <div class="panel compact">
+<pre style="margin: 0; font-size: 11px;">// auto-created on first confirmed dynamic run:
+{
+  "rubric_id": "M8",
+  "package_sha": "ea211b4c...",            // nullable if generic
+  "name": "M8 GeoIP gate bypass — Splash class family",
+  "description_md": "Pairs root-bypass hook with VPN observer...",
+  "trigger_steps_json": [
+    {"step": "frida_load", "script_sha": "&lt;hook_synth_sha&gt;", "intent": "bypass"},
+    {"step": "frida_load", "script_sha": "&lt;universal_sha&gt;", "intent": "observe"},
+    {"step": "adb_intent", "uri": "com.x.app://...", "tap_required": false},
+    {"step": "vpn_rotate", "exits": ["brazil", "us"]}
+  ],
+  "success_count": 1,
+  "source": "auto:from_chain:&lt;chain_id&gt;"
+}
+
+// dyn-frida-spawn lookup before spawn:
+SELECT * FROM workflows
+ WHERE rubric_id = 'M8'
+   AND (package_sha = ? OR package_sha IS NULL)
+ ORDER BY success_count DESC, last_used_at DESC
+ LIMIT 1;</pre>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="roadmap">
+  <h2><span class="num">§16</span> Roadmap — build order</h2>
+  <p class="lead">Sized to ship the PoC in two-week sprints, then iterate. The PoC stops at "labels.jsonl flowing" — agent priors deferred to v2.</p>
+
+  <div class="grid-3">
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Sprint 1 — schema + publisher skeleton</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>darkseed migration <code>005_a_b_integration.sql</code></li>
+        <li>new evidence kinds wired (trigger_mock, decryptor_artifact, logcat_capture)</li>
+        <li>new IndicatorTypes wired</li>
+        <li>publisher skeleton (Python on Kali): adb pull → write joint_report.md → drop into inbox + blobs</li>
+        <li>workflows table created (no UI yet)</li>
+      </ul>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Sprint 2 — contracts on the wire</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>Agent A writes <code>manifest_summary.json</code> + tarball + <code>expected_indicators</code> YAML in rubric MD</li>
+        <li>Agent B Frida hook emits NDJSON via <code>send()</code> (DECIDE-8)</li>
+        <li>Agent B captures <code>logcat_capture</code> + propagates <code>verification_result</code></li>
+        <li>Publisher renders structured joint markdown matching §6</li>
+        <li>End-to-end smoke: one app through DARBEK → … → darkseed chain</li>
+      </ul>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Sprint 3 — Agent A dashboard (minimal)</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>Six tabs (§13)</li>
+        <li>State machine enforced in app layer (the 16 states + transitions)</li>
+        <li>Verdict POST to darkseed with cable-mode fallback queue</li>
+        <li>Proofs tab renders joint_report.md inline (with thumbnails, ndjson timeline, HAR summary)</li>
+      </ul>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Sprint 4 — hook synth + write-back + workflows</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li><code>dyn-hook-synth</code> writes synth.js back to device alongside A's hook</li>
+        <li>New IOCs surface in joint report "discovered by synth" section</li>
+        <li>Workflows auto-promote on confirmed run</li>
+        <li>Workflows panel in darkseed (list + manual curate)</li>
+      </ul>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">Sprint 5 — Agent B Flask → darkseed merge</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li>Devices online panel in darkseed</li>
+        <li>Current job + frida live ndjson stream</li>
+        <li>Past analysis cross-reference (existing chain similarity tab)</li>
+        <li>Decommission <code>:5051</code></li>
+      </ul>
+    </div>
+    <div class="panel compact">
+      <h4 style="margin: 0 0 6px;">v2 (post-PoC)</h4>
+      <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12px; color: var(--muted);">
+        <li><code>dyn-priors</code> sub-agent (KB + similar chains injected into B's session)</li>
+        <li>Agent A pulls priors before its hunt (mirror)</li>
+        <li>Active learning: queue ranking by uncertainty × novelty</li>
+        <li>STIX/MISP push from darkseed verdict-changes</li>
+        <li>Multi-device support (today: one device at a time)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="open">
+  <h2><span class="num">§17</span> Open items / planning slots</h2>
+  <p class="lead">Decisions that didn't gate the design but still need answers before we ship past PoC.</p>
+  <div class="grid-2">
+    <div class="slot">
+      <h4>Scoring-card schema (full)</h4>
+      <ul>
+        <li>You named: <code>report_id</code>, <code>package_name</code>, <code>marmot_id</code>, … — what other fields does the non-agentic automation produce? (install count, age, dev country, store rating, prior verdict cache?)</li>
+        <li>Threshold: what static score triggers <code>awaiting_slice</code>? Configurable per operator?</li>
+        <li>Where does the scoring automation actually run — on the Mac, or another machine that POSTs to A's dashboard?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Copy-paste evidence format (interim)</h4>
+      <ul>
+        <li>Until A's <em>Proofs</em> tab renders joint_report.md inline (Sprint 3), the operator still copy-pastes. What's the target .md report's exact heading structure today, so we can match?</li>
+        <li>Will the Sprint-3 inline render replace the manual copy-paste entirely, or coexist for cross-check?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Multi-device</h4>
+      <ul>
+        <li>PoC = single Pixel. Future = N devices, M operators, one Kali? Or one Kali per device?</li>
+        <li>How does the cable-handoff model scale to multi-device? USB hub + smart cable switching, or N devices = N Kali VMs?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Auth + RBAC</h4>
+      <ul>
+        <li>PoC = single-trust. Future: how many roles (operator / reviewer / admin)? Does darkseed need OIDC, or stays single-token?</li>
+        <li>Verdict-flip privileges — can any operator flip another's verdict, or is it author-bound?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>HTTP API fallback contract</h4>
+      <ul>
+        <li>PoC uses device only. When we enable the HTTP fallback (Sprint 5+), what's the minimum API surface A needs from darkseed beyond verdict POST?</li>
+        <li>Bearer token rotation / scopes?</li>
+      </ul>
+    </div>
+    <div class="slot">
+      <h4>Stuck-job UX</h4>
+      <ul>
+        <li>What does the dashboard show for a job stuck in <code>awaiting_dynamic</code> for 24h (cable never moved)?</li>
+        <li>Auto-escalate? Slack-notify the operator? Just a red badge?</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="bottom">
+  <span>darkseed × jetski · v0.1 · /Users/danielbaruch/darkseed/docs/system-a-b-architecture.html</span>
+  <span>read alongside docs/architecture.html (darkseed internals) and the jetski-sync repo (agent contracts)</span>
+</footer>
+
+</div>
+</body>
+</html>
