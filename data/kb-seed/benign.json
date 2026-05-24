@@ -1,0 +1,20 @@
+{
+  "description": "Known-benign indicators. The agents will tag matches as 'benign-adjacent' rather than malicious.",
+  "indicators": [
+    {
+      "type": "package",
+      "value": "com.android.settings",
+      "notes": "system package"
+    },
+    {
+      "type": "package",
+      "value": "com.google.android.gms",
+      "notes": "google play services"
+    },
+    {
+      "type": "domain",
+      "value": "play.googleapis.com",
+      "notes": "google play CDN"
+    }
+  ]
+}

@@ -4,8 +4,14 @@ dist/
 *.log
 .cache/
 
-# Generated data — kept out of git (regenerable via pnpm generate + pnpm migrate)
-data/
+# Generated data — kept out of git (regenerable via pnpm generate + pnpm migrate).
+# Don't ignore the data/ dir wholesale because we need data/kb-seed/*.json tracked
+# (source-of-truth templates). Ignore the GENERATED subpaths instead.
+data/chains/
+data/blobs/
+data/reports/
+data/*.sqlite*
+data/index.json
 dashboard/public/data/
 synthetic_attack_chain_graphs_*.json
 

@@ -1,0 +1,17 @@
+{
+  "description": "Known-malicious indicators. Hits raise confidence and pre-classify. Seeded from Agent A's live PoC ground truth (com.yy.trainshunting) + synthetic family templates.",
+  "indicators": [
+    {"type": "package", "value": "com.flubot.banker", "category": "phishing", "notes": "FluBot-family"},
+    {"type": "domain", "value": "c2.flubot.invalid", "category": "phishing", "confidence": 0.95},
+
+    {"type": "domain", "value": "api.playnest.top", "category": "riskware", "confidence": 0.95, "source": "agent_a_poc:trainshunting", "notes": "Primary C2 for com.yy.trainshunting payload exchange (M3 phase 3)"},
+    {"type": "domain", "value": "gamvera.top", "category": "riskware", "confidence": 0.9, "source": "agent_a_poc:trainshunting", "notes": "DGA wildcard root; matched as *.gamvera.top in trainshunting M3 phase 3"},
+    {"type": "native_symbol", "value": "libaccountmatchcore.so:_INIT_0", "category": "riskware", "confidence": 0.95, "source": "agent_a_poc:trainshunting", "notes": "XOR decloak ELF constructor; unmasks payload filename in RAM"},
+    {"type": "native_symbol", "value": "libaccountmatchcore.so:_INIT_1", "category": "riskware", "confidence": 0.95, "source": "agent_a_poc:trainshunting", "notes": "Second-stage XOR decloak; cryptographic vectors + cache params"},
+    {"type": "native_symbol", "value": "libaccountmatchcore.so:openAssetWrapper", "category": "riskware", "confidence": 0.85, "source": "agent_a_poc:trainshunting", "notes": "Native asset stream extractor; M3 phase 2 sink"},
+    {"type": "class", "value": "net.orbit.sdkhdh.UdomhfNode", "category": "riskware", "confidence": 0.95, "source": "agent_a_poc:trainshunting", "notes": "Payload entry point reflectively loaded via DexClassLoader in M3 phase 5"},
+    {"type": "class", "value": "com.jbp.novauikc.secure.data.tauhektu4.ConversionPayloadFactory", "category": "riskware", "confidence": 0.9, "source": "agent_a_poc:trainshunting", "notes": "Stall logic bomb (S11 phase 1) — 466-class loop"},
+    {"type": "class", "value": "com.jbp.novauikc.secure.matrixemncu9.node.AdapterNexusYh", "category": "riskware", "confidence": 0.85, "source": "agent_a_poc:trainshunting", "notes": "8s fake UI overlay sink (S11 phase 2)"},
+    {"type": "string_artifact", "value": "scene_routeatl_3a3bd054.res", "category": "riskware", "confidence": 0.9, "source": "agent_a_poc:trainshunting", "notes": "Encrypted payload asset filename; decloaked from _INIT_0 XOR"}
+  ]
+}
