@@ -1057,6 +1057,43 @@ Defer to v2 to ship; PoC will collect the data via verdict_engine telemetry.
 
 ---
 
+## §11 Operational principles (consolidated)
+
+The six load-bearing principles that govern every Claude-side action. They are derived from §2-§7 above but stated here in one numbered list so they can be quoted directly into per-job session context.
+
+### §11.1 Connection-first
+Never proceed past failed preflight. `dyn-device-health` is the first call of every session; hard requirements (ADB reachable + frida-server live + device disk > 1 GB) are non-negotiable. If preflight fails, abort and surface to operator. NTP drift / NordVPN unreachable are warnings, not aborts.
+
+### §11.2 Per-rubric confirmation (not exploration)
+Work is bounded by what the rubrics predict. The unit of investigation is a `(rubric, phase, vpn_exit)` tuple. If a phase doesn't fire after the configured observation window, the conclusion is "behavior not observed under these conditions" — not "evidence of absence." Don't extend windows chasing IOCs outside the rubric set.
+
+### §11.3 Compute budget on known-benign — SKIP known libs
+- Slicer prune (Agent A side) deletes ad-SDK source trees BEFORE hunt — those classes never appear in rubrics.
+- `dyn-frida-spawn` queries the KB for `polarity=benign, type=library` at hook-load time and passes the prefix list to the universal hook so `send()` calls originating from those classes short-circuit (no event emitted; no NDJSON bandwidth burned).
+- `dyn-evasion-analyzer` drops ad-SDK URLs from per-VPN URL counts BEFORE computing deltas (otherwise the counts are noise-dominated).
+- `dyn-verdict-engine` L3 marks any KB-benign hit with polarity -0.7 and high confidence — even if it survives the upstream filters, it's not contributing to a malicious verdict.
+- **Refinement on the §3.3 "+10s window extend" rule:** extend ONLY when the new IOC has KB-malicious polarity OR matches a `class_ref` from another rubric in the same chain. Don't extend for arbitrary new IOCs — that's exploration, not confirmation.
+
+The operational consequence: **if it's a known lib, don't research it, don't instrument it, don't waste session bandwidth on it.** All cycles go to proving rubric phases.
+
+### §11.4 Best-evidence per claim
+Every `step.status: "verified"` has a file behind it. Every IOC has at minimum a Frida event in the NDJSON. Per-phase verification_result evidence carries `evidence_refs[]` pointing to the captures. Never report `verified` without producing the artifact path. Never present `not_triggered` as "evidence of absence" — use the phrase "behavior not observed under these conditions."
+
+### §11.5 Clean workspace
+- Atomic writes: `tmp → mv` pattern for every state sentinel and synth hook write-back
+- Idempotency: every write keyed by content_hash; re-running same job is a no-op past completed steps
+- Single ADB owner during `state.B_started` … `state.B_complete`; never invoke ADB from outside this session
+- State sentinel payload sha256 stamped INTO the sentinel itself (joint arch §17.4); receiver verifies hash matches the file the sentinel signals completion of
+- Lamport seq + clock-offset on every JSON write; per-(actor, job) counter
+
+### §11.6 No false-confidence + audit-true
+- Every layer of the verdict engine that fires contributes a `reason` string in the per-IOC `reasoning[]` array. The reasoning is the audit trail.
+- `engine_version` stamped on every emitted verdict_engine block. Bumping the engine version (changed weights, new layer) writes a row to `engine_versions` table.
+- `static_score` (Agent A's pre-dynamic estimate) is **immutable**. Only `verified_score` mutates based on per-phase confirmations.
+- Operator-flipped verdicts write `signal: flipped_tp_to_fp` or `flipped_fp_to_tp` labels with `source_agent_id` traceable to the agent that emitted the original verdict.
+
+---
+
 ## Appendix A — Tool inventory per agent
 
 | agent | Bash | Read | Write | Task | WebFetch |
