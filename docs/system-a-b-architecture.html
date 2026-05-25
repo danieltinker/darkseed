@@ -169,7 +169,7 @@
 <header class="top">
   <span class="brand">darkseed × jetski</span>
   <span class="tag">System A ↔ System B — joint architecture</span>
-  <span class="meta">drafted 2026-05-23 · supersedes the agent-side blueprint v2 in jetski-sync repo</span>
+  <span class="meta">v0.3 · synced 2026-05-25 · v1.2 ratified · MVP dashboard deployed · fire drill staged</span>
 </header>
 
 <nav class="toc">
@@ -195,6 +195,9 @@
   <a href="#roadmap">roadmap</a>
   <a href="#verdict-engine">verdict engine</a>
   <a href="#alice">alice UI</a>
+  <a href="#sync-state">⚡ sync state v0.3</a>
+  <a href="#fire-drill-flow">fire drill flow</a>
+  <a href="#spof-mitigations">SPOF mitigations</a>
   <a href="#open">open items</a>
 </nav>
 
@@ -1664,8 +1667,331 @@ async function fetchEvidence&lt;T&gt;(ref: EvidenceRef): Promise&lt;EvidenceResu
 </section>
 
 <!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="sync-state">
+  <h2><span class="num">§22</span> ⚡ Sync state v0.3 — fire drill on the wire</h2>
+  <p class="lead">
+    What's actually true on the device + Kali + Mac as of 2026-05-25, after Agent A's v1.2 ratification (<code>14_*</code>), system prompt v3.0 (<code>15_*</code>), Co-Reviewer work-sync (<code>16_*</code>), Agent B's blocker triage (<code>17_*</code>), GREEN-light resolution (<code>18_*</code>), and the MVP dashboard deployment (<code>19_*</code>).
+  </p>
+
+  <div class="grid-2">
+    <div class="panel a-side compact">
+      <h4 style="margin: 0 0 6px;"><span class="pill a">Agent A</span> ratifications shipped in <code>14_*-15_*-16_*-18_*</code></h4>
+      <table class="dt">
+        <tr><td>v1.2 wire contract</td><td><strong>locked</strong>; static_score = rubric only (12 for trainshunting)</td></tr>
+        <tr><td>metadata score</td><td>30, Co-Reviewer display-only, <strong>NOT</strong> in playbook wire</td></tr>
+        <tr><td><code>apk_sha256</code></td><td><code style="font-size: 10px;">7ea44d7dc27909ae36965b98a61f4d3c35dcbd21a7611b3e262527acaa66ac0d</code> (real)</td></tr>
+        <tr><td><code>job_id</code></td><td><code>com.yy.trainshunting_7ea44d7d</code></td></tr>
+        <tr><td><code>install_source</code></td><td><code>use_existing</code> → B skips step 4 install_apk; uses Play Store splits already on device</td></tr>
+        <tr><td><code>is_split_install</code></td><td><code>true</code> in manifest_summary</td></tr>
+        <tr><td>OEM cert L10 list</td><td>Samsung + Google Nexus/Pixel SHA-256 supplied</td></tr>
+        <tr><td>MITRE map adopted</td><td>S4/S9/S11 → T1633.001; S5/S8 → T1437.001; M3/M4 → T1629</td></tr>
+        <tr><td>db_of_tps.db</td><td><strong>BYPASS for Sprint 1</strong> — do not query, do not write</td></tr>
+        <tr><td>10 SPOFs</td><td>all accepted; indicators sidecar regenerated with extensions</td></tr>
+        <tr><td>system prompt</td><td><code>/hunt-riskware-v2</code> v3.0 canonical (rubric catalog v3.0)</td></tr>
+        <tr><td>hardware release</td><td><code>adb kill-server</code> after <code>state.A_complete</code> — dual-host ceremony</td></tr>
+      </table>
+    </div>
+    <div class="panel b-side compact">
+      <h4 style="margin: 0 0 6px;"><span class="pill b">Agent B</span> defensive instrumentation deployed (<code>19_*</code>)</h4>
+      <table class="dt">
+        <tr><td>MVP dashboard</td><td>deployed on Kali <code>:5051</code>; <code>/api/job/&lt;id&gt;/live</code> + 🔴 Live tab</td></tr>
+        <tr><td><code>bypass_anti_frida.js</code></td><td>SPOF #2 — proc/self/maps stub + port 27042-47 deny + thread-name scrub</td></tr>
+        <tr><td><code>unpin_ssl.js</code></td><td>SPOF #3 — okhttp3.CertificatePinner + X509TrustManagerExtensions + WebViewClient overrides</td></tr>
+        <tr><td><code>phase_tick_heartbeat.js</code></td><td>SPOF #5 — 5s heartbeat for partial-completion observability</td></tr>
+        <tr><td>iptables sinkhole</td><td>SPOF #1 — DNS string-match + iptables DROP for api.playnest.top + gamvera.top → live C2 leak prevented</td></tr>
+        <tr><td><code>inter_run_sanitize.sh</code></td><td>SPOF #6 — pm clear + frida-kill + mock proxy reset between VPN exits</td></tr>
+        <tr><td><code>run_3vpn_baseline.sh</code></td><td>SPOF orchestrator — composed hook stack + frida-server liveness preflight + 3-exit pipeline</td></tr>
+        <tr><td>self-tests</td><td>3 scenarios pass (inflight / terminal / empty) — exercise collector without ADB</td></tr>
+        <tr><td>idempotent deploy</td><td><code>deploy_all.sh</code> with <code>--dry-run</code> + <code>--rollback</code></td></tr>
+        <tr><td>bundle pushed</td><td>jetski-sync/<code>mvp_deploy_bundle/</code> — 25 files, ~1700 lines</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel dev compact" style="margin-top: 14px;">
+    <h4 style="margin: 0 0 6px;"><span class="pill dev">Device</span> blocker: handoff dir doesn't exist yet under new job_id</h4>
+    <p style="margin: 0 0 8px; color: var(--muted); font-size: 12px;">
+      The old job_id <code>com.yy.trainshunting_48601853</code> is staged on device. The new job_id <code>com.yy.trainshunting_7ea44d7d</code> (per Blocker #1 fix) requires Agent A to <code>adb push</code> the regenerated artifacts to the new path before B's pipeline can <code>pull_assets_to_host</code> at step 1.
+    </p>
+    <p style="margin: 0; color: var(--muted); font-size: 12px;">
+      <strong>Action required from Gemini operator:</strong> push the regenerated bundle to <code>/data/local/tmp/riskware_handoff/com.yy.trainshunting_7ea44d7d/</code>, then <code>adb shell touch .../state.A_complete</code> + <code>adb kill-server</code> + cable to Windows. <strong>ETA from <code>state.A_complete</code> to closed verdict: ~30-45 min</strong> (per <code>17_*</code> §6 timeline).
+    </p>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="fire-drill-flow">
+  <h2><span class="num">§23</span> Fire drill end-to-end flow (vertical timeline)</h2>
+  <p class="lead">
+    Time-axis flowchart of one complete fire drill from <code>state.A_complete</code> to operator's verdict click. Reads top-to-bottom; cable moves are physical (human carries device between hosts).
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 920" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrF" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#71717a"/></marker>
+      <marker id="arrFA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#34d399"/></marker>
+      <marker id="arrFB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#60a5fa"/></marker>
+      <marker id="arrFD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker>
+    </defs>
+
+    <!-- Lane labels at top -->
+    <text class="lane" x="80" y="32">T+min</text>
+    <text class="lane" x="200" y="32">macOS (Agent A)</text>
+    <text class="lane" x="510" y="32">Pixel 7 (device)</text>
+    <text class="lane" x="820" y="32">Kali (Agent B)</text>
+    <text class="lane" x="1130" y="32">darkseed</text>
+
+    <!-- Horizontal time line markers -->
+    <g stroke="#27272a" stroke-dasharray="2 4">
+      <line x1="60" y1="60" x2="1240" y2="60"/>
+      <line x1="60" y1="140" x2="1240" y2="140"/>
+      <line x1="60" y1="240" x2="1240" y2="240"/>
+      <line x1="60" y1="340" x2="1240" y2="340"/>
+      <line x1="60" y1="460" x2="1240" y2="460"/>
+      <line x1="60" y1="580" x2="1240" y2="580"/>
+      <line x1="60" y1="700" x2="1240" y2="700"/>
+      <line x1="60" y1="820" x2="1240" y2="820"/>
+    </g>
+
+    <!-- T+0: A regenerates v1.2 -->
+    <text class="sub" x="60" y="80" fill="var(--accent-2)">T+0</text>
+    <rect class="box-bg a" x="120" y="62" width="280" height="64" rx="8"/>
+    <text class="title" x="140" y="82">① Agent A regenerates v1.2</text>
+    <text class="sub" x="140" y="98">execution_playbook.json (score 12)</text>
+    <text class="sub" x="140" y="112">manifest_summary.json (EXT-1, splits=true)</text>
+    <text class="sub" x="140" y="126">riskware_indicators.json + 10 SPOF fields</text>
+
+    <!-- T+8: A pushes to device -->
+    <text class="sub" x="60" y="160" fill="var(--accent-2)">T+8</text>
+    <rect class="box-bg a" x="120" y="142" width="280" height="84" rx="8"/>
+    <text class="title" x="140" y="162">② chain_seeded POST → darkseed</text>
+    <text class="sub" x="140" y="178">creates chain row status=proposed</text>
+    <text class="title" x="140" y="200">③ adb push handoff dir + state.A_complete</text>
+    <text class="sub" x="140" y="216">atomic JSON sentinel with payload sha256</text>
+
+    <rect class="box-bg dev" x="430" y="142" width="280" height="84" rx="8"/>
+    <text class="title" x="450" y="162">📥 device receives</text>
+    <text class="sub" x="450" y="178">/data/local/tmp/riskware_handoff/</text>
+    <text class="sub" x="450" y="192">  com.yy.trainshunting_7ea44d7d/</text>
+    <text class="sub" x="450" y="206">    ├── execution_playbook.json</text>
+    <text class="sub" x="450" y="220">    └── state.A_complete</text>
+
+    <rect class="box-bg ds" x="940" y="142" width="280" height="84" rx="8"/>
+    <text class="title" x="960" y="162">📦 darkseed chains row</text>
+    <text class="sub" x="960" y="178">id: riskware-trainshunting-7ea44d7d</text>
+    <text class="sub" x="960" y="192">status: proposed</text>
+    <text class="sub" x="960" y="206">verdict: pending</text>
+    <text class="sub" x="960" y="220">agent_a → darkseed POST</text>
+
+    <path class="arrow a" d="M 290 226 L 400 226" marker-end="url(#arrFA)"/>
+
+    <!-- T+10: cable move -->
+    <text class="sub" x="60" y="260" fill="var(--accent-2)">T+10</text>
+    <rect class="box-bg dev" x="380" y="242" width="380" height="80" rx="8"/>
+    <text class="title" x="400" y="262">🔌 Cable handoff (human)</text>
+    <text class="sub" x="400" y="280">Mac: <tspan fill="#34d399">adb kill-server</tspan> → unplug cable</text>
+    <text class="sub" x="400" y="294">Human walks device from Mac → Kali host</text>
+    <text class="sub" x="400" y="308">Plug into Kali → <tspan fill="#60a5fa">adb start-server</tspan></text>
+
+    <!-- T+11: B scout + claim -->
+    <text class="sub" x="60" y="360" fill="var(--accent-2)">T+11</text>
+    <rect class="box-bg b" x="800" y="342" width="380" height="100" rx="8"/>
+    <text class="title" x="820" y="362">④ dyn-playbook-scout detects job</text>
+    <text class="sub" x="820" y="378">validates state.A_complete sha vs playbook</text>
+    <text class="title" x="820" y="400">⑤ dyn-frida-spawn claims state.B_started</text>
+    <text class="sub" x="820" y="416">pull, sanitize, attach_mock_network</text>
+    <text class="sub" x="820" y="432">SKIP install_apk (use_existing splits)</text>
+
+    <!-- T+12-15: defensive layers active -->
+    <text class="sub" x="60" y="480" fill="var(--accent-2)">T+12</text>
+    <rect class="box-bg b" x="800" y="462" width="380" height="100" rx="8"/>
+    <text class="title" x="820" y="482">⑥ defensive instrumentation ON</text>
+    <text class="sub" x="820" y="500">iptables sinkhole (api.playnest.top blocked)</text>
+    <text class="sub" x="820" y="516">bypass_anti_frida + unpin_ssl + heartbeat</text>
+    <text class="sub" x="820" y="532">mitmproxy mock for /api|track|health|init|sdk</text>
+    <text class="sub" x="820" y="548">composed hook stack: A's S11 + universal + 3 defensive</text>
+
+    <!-- T+15-32: per-VPN spawns -->
+    <text class="sub" x="60" y="600" fill="var(--accent-2)">T+15-32</text>
+    <rect class="box-bg b" x="800" y="582" width="380" height="100" rx="8"/>
+    <text class="title" x="820" y="602">⑦ spawn × 3 VPN exits</text>
+    <text class="sub" x="820" y="620">disconnected → brazil → united_states</text>
+    <text class="sub" x="820" y="636">35s observation + adaptive extend if phase 3-5 pending</text>
+    <text class="sub" x="820" y="652">inter_run_sanitize between exits</text>
+    <text class="sub" x="820" y="668">7 phases verified (M3 ×5 + S11 ×2)</text>
+
+    <rect class="box-bg dev" x="430" y="582" width="280" height="100" rx="8"/>
+    <text class="title" x="450" y="602">📲 trainshunting under hooks</text>
+    <text class="sub" x="450" y="620">_INIT_0 fires (XOR decloak captured)</text>
+    <text class="sub" x="450" y="636">DGA *.gamvera.top under BR only</text>
+    <text class="sub" x="450" y="652">DexClassLoader+UdomhfNode reflected</text>
+    <text class="sub" x="450" y="668">3 screenshot pairs per VPN</text>
+
+    <!-- T+32: verdict engine + publish -->
+    <text class="sub" x="60" y="720" fill="var(--accent-2)">T+32</text>
+    <rect class="box-bg b" x="800" y="702" width="380" height="100" rx="8"/>
+    <text class="title" x="820" y="722">⑧ dyn-verdict-engine runs 10 layers</text>
+    <text class="sub" x="820" y="740">L2/L3 KB hits, L4 expected_indicators, L5 geo-gated</text>
+    <text class="sub" x="820" y="756">phase coherence: full_chain (+0.4)</text>
+    <text class="sub" x="820" y="772">verified_score = 14, chain_score = +0.95</text>
+    <text class="sub" x="820" y="788">agent_initial_verdict: malicious (conf 0.92)</text>
+
+    <rect class="box-bg ds" x="940" y="822" width="280" height="80" rx="8"/>
+    <text class="title" x="960" y="842">⑨ darkseed ingester</text>
+    <text class="sub" x="960" y="860">parses joint MD, creates chain nodes</text>
+    <text class="sub" x="960" y="876">attaches kb_match evidence per IOC</text>
+    <text class="sub" x="960" y="892">chain status → ingested</text>
+
+    <path class="arrow b" d="M 1180 760 C 1220 800, 1100 840, 1100 822" marker-end="url(#arrFB)"/>
+
+    <!-- T+35: state.B_complete + cable -->
+    <text class="sub" x="60" y="840" fill="var(--accent-2)">T+35</text>
+    <rect class="box-bg dev" x="380" y="822" width="380" height="80" rx="8"/>
+    <text class="title" x="400" y="842">🔌 Cable handoff back (human)</text>
+    <text class="sub" x="400" y="860">Kali: state.B_complete written + adb kill-server</text>
+    <text class="sub" x="400" y="876">Human walks device → Mac</text>
+    <text class="sub" x="400" y="892">Mac adb start-server; reads dynamic_results.json</text>
+
+    <!-- T+36-41: review + verdict -->
+    <text class="sub" x="60" y="900" fill="var(--accent-2)">T+41</text>
+    <rect class="box-bg a" x="120" y="822" width="240" height="80" rx="8"/>
+    <text class="title" x="140" y="842">⑩ operator reviews</text>
+    <text class="sub" x="140" y="860">Proofs tab renders joint MD</text>
+    <text class="sub" x="140" y="876">verdict button → POST /chains/&lt;id&gt;/verdict</text>
+    <text class="sub" x="140" y="892">labels.jsonl row written</text>
+  </svg>
+  </div>
+
+  <div class="legend" style="margin-top: 8px;">
+    <span class="li"><span class="sw" style="background: var(--a-tone)"></span>Agent A on Mac</span>
+    <span class="li"><span class="sw" style="background: var(--b-tone)"></span>Agent B on Kali</span>
+    <span class="li"><span class="sw" style="background: var(--dev-tone)"></span>Device / cable handoff</span>
+    <span class="li"><span class="sw" style="background: var(--ds-tone)"></span>darkseed</span>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
+<section id="spof-mitigations">
+  <h2><span class="num">§24</span> SPOF mitigation matrix (the 10 things that could kill the fire drill)</h2>
+  <p class="lead">
+    Agent B's <code>17_*</code> enumeration of 15 runtime SPOFs; Agent A's <code>18_*</code> resolved 9 via static-side schema extensions; the remaining 6 are handled unilaterally by B's defensive instrumentation (deployed in <code>mvp_deploy_bundle/</code> per <code>19_*</code>).
+  </p>
+
+  <div class="panel">
+  <svg class="diagram" viewBox="0 0 1280 620" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrSP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#71717a"/></marker>
+    </defs>
+
+    <text class="lane" x="40" y="32">threat (would-be failure mode)</text>
+    <text class="lane" x="520" y="32">defensive layer (where caught)</text>
+    <text class="lane" x="980" y="32">owner</text>
+
+    <!-- Row helpers: ~50px per row -->
+    <g>
+      <!-- SPOF #1 -->
+      <rect class="box-bg" x="40" y="56" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="78">SPOF #1 — Live C2 leak via real api.playnest.top</text>
+      <text class="sub" x="56" y="90">would pollute attribution data + alert threat actor</text>
+      <rect class="box-bg" x="520" y="56" width="440" height="38" rx="6" style="stroke: var(--b-tone);"/>
+      <text class="sub" x="536" y="78">iptables DROP + /etc/hosts sinkhole + DNS string-match</text>
+      <text class="sub" x="536" y="90">activate.sh / deactivate.sh on Kali</text>
+      <text class="sub" x="980" y="78" fill="#60a5fa">Agent B (deployed)</text>
+
+      <!-- SPOF #2 -->
+      <rect class="box-bg" x="40" y="104" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="126">SPOF #2 — Anti-Frida detection (proc/self/maps scan)</text>
+      <text class="sub" x="56" y="138">trainshunting's 8s logic bomb is sophisticated; likely scans frida threads</text>
+      <rect class="box-bg" x="520" y="104" width="440" height="38" rx="6" style="stroke: var(--b-tone);"/>
+      <text class="sub" x="536" y="126">bypass_anti_frida.js: stub /proc reads + port 27042-47 deny</text>
+      <text class="sub" x="536" y="138">+ pthread_getname_np scrub for gum-js-loop thread</text>
+      <text class="sub" x="980" y="126" fill="#60a5fa">Agent B (deployed)</text>
+
+      <!-- SPOF #3 -->
+      <rect class="box-bg" x="40" y="152" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="174">SPOF #3 — SSL pinning rejects mock C2</text>
+      <text class="sub" x="56" y="186">Adjust + AppsFlyer + riskware C2 pin certs; mitmproxy bypassed</text>
+      <rect class="box-bg" x="520" y="152" width="440" height="38" rx="6" style="stroke: var(--b-tone);"/>
+      <text class="sub" x="536" y="174">unpin_ssl.js: okhttp3.CertificatePinner override</text>
+      <text class="sub" x="536" y="186">+ X509TrustManagerExtensions + WebViewClient onReceivedSslError</text>
+      <text class="sub" x="980" y="174" fill="#60a5fa">Agent B (deployed)</text>
+
+      <!-- SPOF #4 -->
+      <rect class="box-bg" x="40" y="200" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="222">SPOF #4 — Native ELF constructors fire before Frida attaches</text>
+      <text class="sub" x="56" y="234">_INIT_0/_INIT_1 run at dlopen, before Application.onCreate</text>
+      <rect class="box-bg" x="520" y="200" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="222">indicators sidecar tagged execution_timing: dlopen_time</text>
+      <text class="sub" x="536" y="234">+ race_risk: fires_before_application_oncreate</text>
+      <text class="sub" x="980" y="222" fill="#34d399">Agent A schema (resolved)</text>
+
+      <!-- SPOF #5 -->
+      <rect class="box-bg" x="40" y="248" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="270">SPOF #5 — phase_status undifferentiated (not_reached vs not_triggered)</text>
+      <text class="sub" x="56" y="282">phase 3 crash makes phases 4-5 look like true negatives</text>
+      <rect class="box-bg" x="520" y="248" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="270">phase_status enum: verified | verified_post_hoc | not_triggered |</text>
+      <text class="sub" x="536" y="282">  not_reached | failed | skipped</text>
+      <text class="sub" x="980" y="270" fill="#34d399">Agent A schema (resolved)</text>
+
+      <!-- SPOF #6 -->
+      <rect class="box-bg" x="40" y="296" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="318">SPOF #6 — Inter-VPN-exit state pollution</text>
+      <text class="sub" x="56" y="330">C2 "first install" gate misfires; cached responses replay</text>
+      <rect class="box-bg" x="520" y="296" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="318">vpn_inter_run_sanitize: pm clear + wipe SP + frida-kill +</text>
+      <text class="sub" x="536" y="330">  mock proxy reset + 5s wait. inter_run_sanitize.sh on B side</text>
+      <text class="sub" x="980" y="318" fill="#34d399">A schema + B impl</text>
+
+      <!-- SPOF #7 -->
+      <rect class="box-bg" x="40" y="344" width="460" height="38" rx="6" style="stroke: #71717a;"/>
+      <text class="title" x="56" y="366">SPOF #7 — frida-server crash mid-spawn</text>
+      <text class="sub" x="56" y="378">PID changes; sub-agent loses connection</text>
+      <rect class="box-bg" x="520" y="344" width="440" height="38" rx="6" style="stroke: var(--b-tone);"/>
+      <text class="sub" x="536" y="366">dyn-device-health restart loop via su -c setsid</text>
+      <text class="sub" x="536" y="378">pre-spawn liveness check; abort if can't restore</text>
+      <text class="sub" x="980" y="366" fill="#60a5fa">Agent B (existing)</text>
+
+      <!-- SPOF #8 -->
+      <rect class="box-bg" x="40" y="392" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="414">SPOF #8 — Exhaustive C2 endpoint paths</text>
+      <text class="sub" x="56" y="426">/api/* mock missed /health, /init, /track, /v2/*</text>
+      <rect class="box-bg" x="520" y="392" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="414">regex extended to /(api|track|health|init|sdk)/.* per A's 18_*</text>
+      <text class="sub" x="536" y="426">url_pattern indicator with full surface</text>
+      <text class="sub" x="980" y="414" fill="#34d399">Agent A schema (resolved)</text>
+
+      <!-- SPOF #9 -->
+      <rect class="box-bg" x="40" y="440" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="462">SPOF #9 — App self-uninstalls post-Phase 5</text>
+      <text class="sub" x="56" y="474">UdomhfNode payload deletes staging app; B sees "pipeline failure"</text>
+      <rect class="box-bg" x="520" y="440" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="462">self_destructive_action indicator with</text>
+      <text class="sub" x="536" y="474">treat_observation_as: evidence_of_payload_execution</text>
+      <text class="sub" x="980" y="462" fill="#34d399">Agent A schema (resolved)</text>
+
+      <!-- SPOF #10 -->
+      <rect class="box-bg" x="40" y="488" width="460" height="38" rx="6" style="stroke: #dc2626;"/>
+      <text class="title" x="56" y="510">SPOF #10 — Fixed 35s window cuts off late phases</text>
+      <text class="sub" x="56" y="522">AES round-trip on slow VPN may exceed window</text>
+      <rect class="box-bg" x="520" y="488" width="440" height="38" rx="6" style="stroke: var(--a-tone);"/>
+      <text class="sub" x="536" y="510">observation_window_max_seconds: 90</text>
+      <text class="sub" x="536" y="522">extend_when: phase_3_observed_and_phase_5_pending</text>
+      <text class="sub" x="980" y="510" fill="#34d399">A schema + B impl</text>
+
+      <!-- Summary -->
+      <rect class="box-bg" x="40" y="556" width="1180" height="40" rx="6" style="stroke: var(--ok);"/>
+      <text class="title" x="56" y="580" fill="#86efac">GREEN LIGHT — all 10 SPOFs covered</text>
+      <text class="sub" x="56" y="594">9 resolved via schema extensions in A's 18_*; 6 deployed defensively on B in 19_* (overlap = redundancy for SPOFs 6 + 10). Fire drill cleared to execute on Agent A's adb push.</text>
+    </g>
+  </svg>
+  </div>
+</section>
+
+<!-- ───────────────────────────────────────────────────────────────────────── -->
 <section id="open">
-  <h2><span class="num">§22</span> Open items / planning slots</h2>
+  <h2><span class="num">§25</span> Open items / planning slots</h2>
   <p class="lead">Decisions that didn't gate the design but still need answers before we ship past PoC.</p>
   <div class="grid-2">
     <div class="slot">
